@@ -1,6 +1,6 @@
 # Valutazione Clienti
 
-Applicazione web in Streamlit per dare un punteggio ai clienti e ordinarli in classifica.
+Applicazione web in Streamlit per dare un punteggio e un rank (A-E) ai clienti.
 
 ## Come funziona
 
@@ -8,9 +8,19 @@ Applicazione web in Streamlit per dare un punteggio ai clienti e ordinarli in cl
 2. Per ogni variabile il cliente riceve punti **in proporzione al tetto massimo**
    (es. tetto 100, punti massimi 20: con 50 prende 10 punti, con 59 ne prende 11,8).
    Chi supera il tetto prende i punti massimi.
-3. I punti delle 5 variabili si sommano e i clienti vengono ordinati in classifica.
+3. I punti delle 5 variabili si sommano e a ogni cliente viene assegnato un **rank**:
 
-Le righe incomplete o con valori negativi vengono escluse dalla classifica con un avviso.
+   | Rank | Punti totali |
+   |---|---|
+   | A | 80 o più |
+   | B | da 60 a meno di 80 |
+   | C | da 40 a meno di 60 |
+   | D | da 20 a meno di 40 |
+   | E | meno di 20 |
+
+   I clienti sono mostrati dal punteggio più alto al più basso.
+
+Le righe incomplete o con valori negativi vengono escluse dalla valutazione con un avviso.
 
 ## Dove modificare
 
@@ -20,7 +30,8 @@ Tutto è in `app.py`:
 |---|---|
 | Nomi delle variabili, tetti massimi, punti massimi | lista `VARIABILI` |
 | Formula dei punti di una variabile | funzione `calcola_punti()` — cerca `# TODO` |
-| Somma e ordinamento della classifica | funzione `calcola_classifica()` |
+| Fasce di rank (lettere e soglie) | lista `FASCE_RANK` |
+| Somma dei punti, rank e ordinamento | funzioni `calcola_rank()` e `calcola_risultati()` |
 | Controlli sui dati inseriti | funzione `prepara_clienti()` |
 | Decimali dei punteggi | `DECIMALI_PUNTI` |
 

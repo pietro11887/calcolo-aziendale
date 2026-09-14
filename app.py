@@ -4,13 +4,13 @@ Valutazione clienti - Streamlit.
 Funzionamento:
     1. L'utente inserisce a mano i clienti in una tabella (una riga per cliente).
     2. Per ogni variabile il cliente riceve punti in proporzione al tetto massimo.
-    3. I punti vengono sommati e i clienti ordinati in una classifica.
+    3. I punti vengono sommati e a ogni cliente viene assegnato un rank (A-E).
 
 Organizzazione del file:
-    1. CONFIGURAZIONE  -> variabili, tetti massimi, punti massimi
-    2. CALCOLO         -> `calcola_punti()` e `calcola_classifica()`
+    1. CONFIGURAZIONE  -> variabili, tetti massimi, punti massimi, fasce di rank
+    2. CALCOLO         -> `calcola_punti()`, `calcola_rank()` e `calcola_risultati()`
     3. VALIDAZIONE     -> `prepara_clienti()` (scarta le righe incomplete)
-    4. INTERFACCIA     -> tabella di inserimento e classifica
+    4. INTERFACCIA     -> tabella di inserimento e risultati
 """
 
 import pandas as pd
@@ -24,7 +24,7 @@ import streamlit as st
 TITOLO_APP = "Valutazione Clienti"
 DESCRIZIONE_APP = (
     "Inserisci i clienti nella tabella, una riga per cliente. "
-    "La classifica sotto si aggiorna automaticamente."
+    "Punti e rank si aggiornano automaticamente sotto."
 )
 
 COLONNA_CLIENTE = "Cliente"
@@ -41,14 +41,25 @@ VARIABILI = [
     {"nome": "Variabile 5", "tetto": 100,        "punti_max": 20},  # TODO: tetto reale
 ]
 
+# Fasce di rank: (lettera, punteggio minimo). Un cliente riceve la prima
+# lettera il cui minimo è raggiunto, quindi l'ordine va dal più alto al più basso.
+# Esempio: 80 -> A, 79.9 -> B.
+FASCE_RANK = [
+    ("A", 80),
+    ("B", 60),
+    ("C", 40),
+    ("D", 20),
+    ("E", 0),
+]
+
 DECIMALI_PUNTI = 1
 
 COLONNA_TOTALE = "Totale punti"
-COLONNA_POSIZIONE = "Posizione"
+COLONNA_RANK = "Rank"
 
 
 def colonna_punti(variabile: dict) -> str:
-    """Nome della colonna con i punti di una variabile nella classifica."""
+    """Nome della colonna con i punti di una variabile nei risultati."""
     return f"Punti {variabile['nome']}"
 
 
@@ -74,39 +85,48 @@ def calcola_punti(valore: float, tetto: float, punti_max: float) -> float:
     return round(punti, DECIMALI_PUNTI)
 
 
-def calcola_classifica(clienti: pd.DataFrame) -> pd.DataFrame:
+def calcola_rank(totale: float) -> str:
+    """Restituisce la lettera di rank per un punteggio totale (vedi FASCE_RANK)."""
+    for lettera, minimo in FASCE_RANK:
+        if totale >= minimo:
+            return lettera
+    return FASCE_RANK[-1][0]
+
+
+def calcola_risultati(clienti: pd.DataFrame) -> pd.DataFrame:
     """
-    Calcola i punti di tutti i clienti e restituisce la classifica.
+    Calcola punti e rank di tutti i clienti.
 
     Parametri:
         clienti: tabella completa, con la colonna COLONNA_CLIENTE
                  e una colonna numerica per ogni variabile.
 
     Ritorna:
-        Tabella con posizione, cliente, punti per variabile e totale,
+        Tabella con rank, cliente, totale e punti per variabile,
         ordinata dal punteggio più alto al più basso.
     """
-    classifica = pd.DataFrame({COLONNA_CLIENTE: clienti[COLONNA_CLIENTE]})
-
+    punti = pd.DataFrame(index=clienti.index)
     for variabile in VARIABILI:
-        classifica[colonna_punti(variabile)] = clienti[variabile["nome"]].apply(
+        punti[colonna_punti(variabile)] = clienti[variabile["nome"]].apply(
             calcola_punti, tetto=variabile["tetto"], punti_max=variabile["punti_max"]
         )
 
     # Somma dei punti già arrotondati, così i numeri in tabella tornano sempre
-    colonne_punti = [colonna_punti(v) for v in VARIABILI]
-    classifica[COLONNA_TOTALE] = classifica[colonne_punti].sum(axis=1).round(DECIMALI_PUNTI)
+    totale = punti.sum(axis=1).round(DECIMALI_PUNTI)
+
+    risultati = pd.concat([
+        pd.DataFrame({
+            COLONNA_RANK: totale.apply(calcola_rank),
+            COLONNA_CLIENTE: clienti[COLONNA_CLIENTE],
+            COLONNA_TOTALE: totale,
+        }),
+        punti,
+    ], axis=1)
 
     # Ordina per punteggio (a parità di punti, in ordine alfabetico)
-    classifica = classifica.sort_values(
+    return risultati.sort_values(
         [COLONNA_TOTALE, COLONNA_CLIENTE], ascending=[False, True]
     ).reset_index(drop=True)
-
-    # Clienti con lo stesso totale condividono la posizione (es. 1, 2, 2, 4)
-    posizioni = classifica[COLONNA_TOTALE].rank(method="min", ascending=False).astype(int)
-    classifica.insert(0, COLONNA_POSIZIONE, posizioni)
-
-    return classifica
 
 
 # =============================================================================
@@ -118,7 +138,7 @@ def prepara_clienti(tabella: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     Separa le righe complete da quelle incomplete.
 
     Ritorna:
-        (clienti completi da mettere in classifica, avvisi sulle righe scartate).
+        (clienti completi da valutare, avvisi sulle righe scartate).
         Le righe completamente vuote vengono ignorate senza avvisi.
     """
     colonne_valori = [v["nome"] for v in VARIABILI]
@@ -177,6 +197,15 @@ def mostra_regole() -> None:
             f"Punteggio massimo totale: {punteggio_max}."
         )
 
+        fasce = []
+        for i, (lettera, minimo) in enumerate(FASCE_RANK):
+            if i == 0:
+                fasce.append((lettera, f"{minimo} o più"))
+            else:
+                fasce.append((lettera, f"da {minimo} a meno di {FASCE_RANK[i - 1][1]}"))
+        st.markdown("**Fasce di rank**")
+        st.dataframe(pd.DataFrame(fasce, columns=[COLONNA_RANK, "Punti"]), hide_index=True)
+
 
 def main() -> None:
     st.set_page_config(page_title=TITOLO_APP, page_icon="📊", layout="wide")
@@ -202,14 +231,14 @@ def main() -> None:
 
     clienti, avvisi = prepara_clienti(tabella)
     for avviso in avvisi:
-        st.warning(f"Escluso dalla classifica — {avviso}")
+        st.warning(f"Escluso dalla valutazione — {avviso}")
 
-    st.subheader("Classifica")
+    st.subheader("Risultati")
     if clienti.empty:
-        st.info("Aggiungi almeno un cliente con tutti i valori per vedere la classifica.")
+        st.info("Aggiungi almeno un cliente con tutti i valori per vedere punti e rank.")
         return
 
-    st.dataframe(calcola_classifica(clienti), hide_index=True)
+    st.dataframe(calcola_risultati(clienti), hide_index=True)
 
 
 if __name__ == "__main__":
