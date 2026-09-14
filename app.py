@@ -3,13 +3,13 @@ Valutazione clienti - Streamlit.
 
 Funzionamento:
     1. L'utente inserisce a mano i clienti in una tabella (una riga per cliente).
-    2. Per ogni variabile il cliente riceve punti in proporzione al tetto massimo.
-    3. I punti vengono sommati e a ogni cliente viene assegnato un rank (A-E).
+    2. Ogni criterio di valutazione assegna dei punti al cliente.
+    3. I punti vengono sommati, riportati su 100 e a ogni cliente viene assegnato un rank (A-E).
     4. I clienti vengono salvati su un foglio Google (se configurato nei secrets).
 
 Organizzazione del file:
-    1. CONFIGURAZIONE  -> variabili, tetti massimi, punti massimi, fasce di rank
-    2. CALCOLO         -> `calcola_punti()`, `calcola_rank()` e `calcola_risultati()`
+    1. CONFIGURAZIONE  -> criteri di valutazione, fasce di rank
+    2. CALCOLO         -> `calcola_punti()`, `punti_criterio()`, `calcola_rank()`, `calcola_risultati()`
     3. VALIDAZIONE     -> `normalizza_tabella()` e `prepara_clienti()`
     4. SALVATAGGIO     -> lettura e scrittura dei clienti su Google Fogli
     5. INTERFACCIA     -> inserimento, salvataggio e valutazione
@@ -34,24 +34,88 @@ DESCRIZIONE_APP = (
 
 COLONNA_CLIENTE = "Cliente"
 
-# Variabili di valutazione.
-#   - nome:      intestazione della colonna nella tabella (e nel foglio Google)
-#   - tetto:     valore a cui si ottengono i punti massimi (oltre non si prendono punti extra)
-#   - punti_max: punti assegnati a chi raggiunge o supera il tetto
-VARIABILI = [
-    {"nome": "Variabile 1", "tetto": 10_000_000, "punti_max": 20},  # es. fatturato (€)
-    {"nome": "Variabile 2", "tetto": 100,        "punti_max": 20},  # es. numero dipendenti
-    {"nome": "Variabile 3", "tetto": 100,        "punti_max": 20},  # TODO: tetto reale
-    {"nome": "Variabile 4", "tetto": 100,        "punti_max": 20},  # TODO: tetto reale
-    {"nome": "Variabile 5", "tetto": 100,        "punti_max": 20},  # TODO: tetto reale
+# Criteri di valutazione. Ogni criterio ha:
+#   - nome:      nome del criterio, usato nei risultati
+#   - tipo:      "numero" -> punti proporzionali al tetto
+#                "menu"   -> punti fissi per ogni opzione del menu a tendina
+#   - colonne:   colonne da compilare nella tabella (e nel foglio Google).
+#                Con più colonne si usa la media (es. fatturato degli ultimi 3 anni).
+#   - conta:     False = il criterio si compila ma non entra nel punteggio
+#   - punti_max: punti massimi del criterio
+#   - aiuto:     suggerimento mostrato sull'intestazione della colonna
+# Solo per il tipo "numero":
+#   - tetto:           valore (o media) a cui si ottengono i punti massimi
+#   - minimo, massimo: limiti ammessi in inserimento (None = nessun limite)
+# Solo per il tipo "menu":
+#   - opzioni:   {opzione: punti}
+CRITERI = [
+    {
+        "nome": "Categoria",  # TODO: nome e testo delle opzioni definitivi
+        "tipo": "menu",
+        "colonne": ["Categoria"],
+        # TODO: punti di ciascuna opzione, da definire
+        "opzioni": {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0, "7": 0, "8": 0},
+        "conta": False,  # TODO: mettere True quando i punti delle opzioni sono definiti
+        "punti_max": 20,
+        "aiuto": "Scegli un valore dal menu.",
+    },
+    {
+        "nome": "Fatturato",
+        "tipo": "numero",
+        "colonne": ["Fatturato"],
+        "tetto": 10_000_000,
+        "minimo": 0,
+        "massimo": None,
+        "conta": True,
+        "punti_max": 20,
+        "aiuto": "Fatturato annuo in euro.",
+    },
+    {
+        "nome": "Fatturato storico",
+        "tipo": "numero",
+        "colonne": ["Fatturato storico 1", "Fatturato storico 2", "Fatturato storico 3"],
+        "tetto": 10_000_000,
+        "minimo": 0,
+        "massimo": None,
+        "conta": True,
+        "punti_max": 20,
+        "aiuto": "Fatturato di ciascuno degli ultimi 3 anni in euro: i punti si calcolano sulla media.",
+    },
+    {
+        "nome": "Dipendenti",
+        "tipo": "numero",
+        "colonne": ["Dipendenti"],
+        "tetto": 100,
+        "minimo": 0,
+        "massimo": None,
+        "conta": True,
+        "punti_max": 20,
+        "aiuto": "Numero di dipendenti.",
+    },
+    {
+        "nome": "Potenzialità",
+        "tipo": "numero",
+        "colonne": ["Potenzialità"],
+        "tetto": 10,
+        "minimo": 1,
+        "massimo": 10,
+        "conta": True,
+        "punti_max": 20,
+        "aiuto": "Voto da 1 a 10 sulla potenzialità dell'azienda.",
+    },
 ]
 
-COLONNE_CLIENTI = [COLONNA_CLIENTE] + [v["nome"] for v in VARIABILI]
-PUNTEGGIO_MAX = sum(v["punti_max"] for v in VARIABILI)
+COLONNE_CLIENTI = [COLONNA_CLIENTE] + [col for criterio in CRITERI for col in criterio["colonne"]]
+CRITERI_CONTEGGIATI = [criterio for criterio in CRITERI if criterio["conta"]]
+PUNTI_TOTALI_MAX = sum(criterio["punti_max"] for criterio in CRITERI_CONTEGGIATI)
+
+# Il punteggio finale è riportato su questa scala, così le fasce di rank
+# restano valide anche se alcuni criteri non sono conteggiati.
+SCALA_PUNTEGGIO = 100
 
 # Fasce di rank, dalla più alta alla più bassa. Un cliente riceve la prima
 # fascia il cui punteggio minimo è raggiunto (es. 80 -> A, 79,9 -> B).
-#   - minimo:        punteggio totale minimo della fascia
+#   - minimo:        punteggio minimo della fascia (su SCALA_PUNTEGGIO)
 #   - testo, sfondo: colori con cui la fascia viene evidenziata
 FASCE_RANK = [
     {"lettera": "A", "minimo": 80, "testo": "#1E6B43", "sfondo": "#E3F2EA"},
@@ -63,19 +127,26 @@ FASCE_RANK = [
 
 DECIMALI_PUNTI = 1
 
-# Colore neutro della barra del punteggio totale (il rosso di default sembrerebbe un allarme)
-COLORE_BARRA_TOTALE = "#3B5B7A"
+# Colore neutro della barra del punteggio (il rosso di default sembrerebbe un allarme)
+COLORE_BARRA_PUNTEGGIO = "#3B5B7A"
 
-COLONNA_TOTALE = "Totale punti"
+COLONNA_PUNTEGGIO = "Punteggio"
 COLONNA_RANK = "Rank"
 
 # Sezione dei secrets di Streamlit con l'URL del foglio Google e le credenziali (vedi README)
 SEZIONE_SECRETS = "google_sheets"
 
+# Vecchi nomi delle colonne nel foglio Google, riconosciuti in lettura
+# così i dati salvati con le versioni precedenti non vanno persi.
+ALIAS_COLONNE = {
+    "Variabile 1": "Fatturato",
+    "Variabile 2": "Dipendenti",
+}
 
-def colonna_punti(variabile: dict) -> str:
-    """Nome della colonna con i punti di una variabile nei risultati."""
-    return f"Punti {variabile['nome']}"
+
+def colonna_punti(criterio: dict) -> str:
+    """Nome della colonna con i punti di un criterio nei risultati."""
+    return f"Punti {criterio['nome']}"
 
 
 # =============================================================================
@@ -84,7 +155,7 @@ def colonna_punti(variabile: dict) -> str:
 
 def calcola_punti(valore: float, tetto: float, punti_max: float) -> float:
     """
-    Calcola i punti di UNA variabile per UN cliente.
+    Punti proporzionali al tetto, per i criteri di tipo "numero".
 
     Esempio: tetto 100 dipendenti, punti_max 20
         50 dipendenti  -> 10 punti
@@ -93,54 +164,72 @@ def calcola_punti(valore: float, tetto: float, punti_max: float) -> float:
     """
     # TODO: sostituire con la formula reale se il cliente ne fornisce una diversa
     # ------------------------------------------------------------------
-    # Punti proporzionali al tetto, senza superare punti_max.
     valore_limitato = min(max(valore, 0), tetto)
     punti = valore_limitato / tetto * punti_max
     # ------------------------------------------------------------------
     return round(punti, DECIMALI_PUNTI)
 
 
-def calcola_rank(totale: float) -> str:
-    """Restituisce la lettera di rank per un punteggio totale (vedi FASCE_RANK)."""
+def punti_criterio(criterio: dict, riga: pd.Series) -> float:
+    """Punti di UN criterio per UN cliente (riga già validata)."""
+    if criterio["tipo"] == "menu":
+        punti = criterio["opzioni"][riga[criterio["colonne"][0]]]
+        return round(min(punti, criterio["punti_max"]), DECIMALI_PUNTI)
+
+    # Con più colonne (es. fatturato degli ultimi 3 anni) si usa la media
+    valori = [riga[colonna] for colonna in criterio["colonne"]]
+    media = sum(valori) / len(valori)
+    return calcola_punti(media, criterio["tetto"], criterio["punti_max"])
+
+
+def calcola_rank(punteggio: float) -> str:
+    """Restituisce la lettera di rank per un punteggio (vedi FASCE_RANK)."""
     for fascia in FASCE_RANK:
-        if totale >= fascia["minimo"]:
+        if punteggio >= fascia["minimo"]:
             return fascia["lettera"]
     return FASCE_RANK[-1]["lettera"]
 
 
 def calcola_risultati(clienti: pd.DataFrame) -> pd.DataFrame:
     """
-    Calcola punti e rank di tutti i clienti.
+    Calcola punti, punteggio e rank di tutti i clienti.
 
     Parametri:
-        clienti: tabella completa, con la colonna COLONNA_CLIENTE
-                 e una colonna numerica per ogni variabile.
+        clienti: tabella validata (almeno un cliente), con le colonne di COLONNE_CLIENTI.
 
     Ritorna:
-        Tabella con rank, cliente, totale e punti per variabile,
-        ordinata dal punteggio più alto al più basso.
+        Tabella con rank, cliente, punteggio su SCALA_PUNTEGGIO, i valori dei criteri
+        non conteggiati e i punti di ogni criterio, ordinata dal punteggio più alto.
     """
     punti = pd.DataFrame(index=clienti.index)
-    for variabile in VARIABILI:
-        punti[colonna_punti(variabile)] = clienti[variabile["nome"]].apply(
-            calcola_punti, tetto=variabile["tetto"], punti_max=variabile["punti_max"]
+    for criterio in CRITERI_CONTEGGIATI:
+        punti[colonna_punti(criterio)] = clienti.apply(
+            lambda riga, c=criterio: punti_criterio(c, riga), axis=1
         )
 
-    # Somma dei punti già arrotondati, così i numeri in tabella tornano sempre
-    totale = punti.sum(axis=1).round(DECIMALI_PUNTI)
+    # Somma dei punti (già arrotondati) riportata su SCALA_PUNTEGGIO
+    somma = punti.sum(axis=1)
+    if PUNTI_TOTALI_MAX:
+        punteggio = (somma / PUNTI_TOTALI_MAX * SCALA_PUNTEGGIO).round(DECIMALI_PUNTI)
+    else:
+        punteggio = somma * 0
+
+    # I criteri non conteggiati si mostrano comunque, a titolo informativo
+    colonne_informative = [col for c in CRITERI if not c["conta"] for col in c["colonne"]]
 
     risultati = pd.concat([
         pd.DataFrame({
-            COLONNA_RANK: totale.apply(calcola_rank),
+            COLONNA_RANK: punteggio.apply(calcola_rank),
             COLONNA_CLIENTE: clienti[COLONNA_CLIENTE],
-            COLONNA_TOTALE: totale,
+            COLONNA_PUNTEGGIO: punteggio,
         }),
+        clienti[colonne_informative],
         punti,
     ], axis=1)
 
     # Ordina per punteggio (a parità di punti, in ordine alfabetico)
     return risultati.sort_values(
-        [COLONNA_TOTALE, COLONNA_CLIENTE], ascending=[False, True]
+        [COLONNA_PUNTEGGIO, COLONNA_CLIENTE], ascending=[False, True]
     ).reset_index(drop=True)
 
 
@@ -148,18 +237,31 @@ def calcola_risultati(clienti: pd.DataFrame) -> pd.DataFrame:
 # 3. VALIDAZIONE
 # =============================================================================
 
+def testo_opzione(valore):
+    """Valore di un menu come testo: 3 o 3.0 (es. letti dal foglio Google) diventano "3"."""
+    if valore is None or (not isinstance(valore, str) and pd.isna(valore)):
+        return pd.NA
+    if isinstance(valore, float) and valore.is_integer():
+        valore = int(valore)
+    testo = str(valore).strip()
+    return testo if testo else pd.NA
+
+
 def normalizza_tabella(tabella: pd.DataFrame) -> pd.DataFrame:
     """
     Riporta la tabella dei clienti a un formato standard: colonne nell'ordine
-    di COLONNE_CLIENTI, nomi senza spazi ai lati, valori numerici, niente righe vuote.
+    di COLONNE_CLIENTI, testi senza spazi ai lati, numeri come numeri, niente righe vuote.
     """
     tabella = tabella.reindex(columns=COLONNE_CLIENTI).copy()
     tabella[COLONNA_CLIENTE] = (
         tabella[COLONNA_CLIENTE].astype("string").str.strip().replace("", pd.NA)
     )
-    for variabile in VARIABILI:
-        nome = variabile["nome"]
-        tabella[nome] = pd.to_numeric(tabella[nome], errors="coerce").astype("float")
+    for criterio in CRITERI:
+        for colonna in criterio["colonne"]:
+            if criterio["tipo"] == "menu":
+                tabella[colonna] = tabella[colonna].map(testo_opzione).astype("string")
+            else:
+                tabella[colonna] = pd.to_numeric(tabella[colonna], errors="coerce").astype("float")
     return tabella.dropna(how="all").reset_index(drop=True)
 
 
@@ -168,34 +270,55 @@ def tabella_vuota() -> pd.DataFrame:
     return normalizza_tabella(pd.DataFrame(columns=COLONNE_CLIENTI))
 
 
+def problemi_riga(riga: pd.Series) -> list[str]:
+    """Elenco dei problemi di una riga (lista vuota = riga valida)."""
+    problemi = []
+
+    # Obbligatori: il nome e le colonne dei criteri che entrano nel punteggio
+    obbligatorie = [COLONNA_CLIENTE] + [col for c in CRITERI_CONTEGGIATI for col in c["colonne"]]
+    mancanti = [colonna for colonna in obbligatorie if pd.isna(riga[colonna])]
+    if mancanti:
+        problemi.append(f"manca {', '.join(mancanti)}")
+
+    for criterio in CRITERI:
+        for colonna in criterio["colonne"]:
+            valore = riga[colonna]
+            if pd.isna(valore):
+                continue
+            if criterio["tipo"] == "menu":
+                if valore not in criterio["opzioni"]:
+                    problemi.append(f"«{valore}» non è un valore valido per {colonna}")
+            else:
+                if criterio["minimo"] is not None and valore < criterio["minimo"]:
+                    problemi.append(f"{colonna} non può essere inferiore a {formatta_numero(criterio['minimo'])}")
+                if criterio["massimo"] is not None and valore > criterio["massimo"]:
+                    problemi.append(f"{colonna} non può essere superiore a {formatta_numero(criterio['massimo'])}")
+
+    # TODO: aggiungere eventuali controlli specifici (es. clienti duplicati)
+    return problemi
+
+
 def prepara_clienti(tabella: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     """
-    Separa le righe complete da quelle incomplete.
+    Separa le righe complete e valide da quelle da correggere.
 
     Ritorna:
-        (clienti completi da valutare, avvisi sulle righe scartate).
+        (clienti da valutare, avvisi sulle righe scartate).
         Le righe completamente vuote vengono ignorate senza avvisi.
     """
-    colonne_valori = [v["nome"] for v in VARIABILI]
     tabella = normalizza_tabella(tabella)
 
     avvisi = []
-    complete = []
+    valide = []
     for numero, (_, riga) in enumerate(tabella.iterrows(), start=1):
-        nome_riga = riga[COLONNA_CLIENTE] if pd.notna(riga[COLONNA_CLIENTE]) else f"Riga {numero}"
-        mancanti = [c for c in COLONNE_CLIENTI if pd.isna(riga[c])]
-        negativi = [c for c in colonne_valori if pd.notna(riga[c]) and riga[c] < 0]
-
-        if mancanti:
-            avvisi.append(f"{nome_riga}: manca {', '.join(mancanti)}.")
-        elif negativi:
-            avvisi.append(f"{nome_riga}: valori negativi in {', '.join(negativi)}.")
+        problemi = problemi_riga(riga)
+        if problemi:
+            nome_riga = riga[COLONNA_CLIENTE] if pd.notna(riga[COLONNA_CLIENTE]) else f"Riga {numero}"
+            avvisi.append(f"{nome_riga}: {'; '.join(problemi)}.")
         else:
-            complete.append(riga)
+            valide.append(riga)
 
-    # TODO: aggiungere eventuali controlli specifici (es. clienti duplicati)
-
-    clienti = pd.DataFrame(complete, columns=tabella.columns).reset_index(drop=True)
+    clienti = pd.DataFrame(valide, columns=tabella.columns).reset_index(drop=True)
     return clienti, avvisi
 
 
@@ -269,6 +392,7 @@ def leggi_clienti(foglio) -> pd.DataFrame:
         return tabella_vuota()
 
     intestazioni = [str(c).strip() for c in righe[0]]
+    intestazioni = [ALIAS_COLONNE.get(c, c) for c in intestazioni]
     n = len(intestazioni)
     dati = [list(r[:n]) + [""] * (n - len(r)) for r in righe[1:]]
 
@@ -299,22 +423,22 @@ def scrivi_clienti(foglio, tabella: pd.DataFrame) -> None:
 # 5. INTERFACCIA
 # =============================================================================
 
-def formatta_punti(numero: float) -> str:
-    """Punteggio in stile italiano, senza decimali inutili (80 -> "80", 79.9 -> "79,9")."""
-    testo = f"{numero:.{DECIMALI_PUNTI}f}"
+def formatta_numero(numero: float) -> str:
+    """Numero in stile italiano, senza decimali inutili (10000000 -> "10.000.000", 79.9 -> "79,9")."""
+    testo = f"{numero:,.{DECIMALI_PUNTI}f}"
     if "." in testo:
         testo = testo.rstrip("0").rstrip(".")
-    return testo.replace(".", ",")
+    return testo.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def intervallo_fascia(indice: int) -> str:
-    """Intervallo di punti di una fascia di rank, es. "60 – 79,9"."""
+    """Intervallo di punteggio di una fascia di rank, es. "60 – 79,9"."""
     minimo = FASCE_RANK[indice]["minimo"]
     if indice == 0:
-        massimo = PUNTEGGIO_MAX
+        massimo = SCALA_PUNTEGGIO
     else:
         massimo = FASCE_RANK[indice - 1]["minimo"] - 10 ** -DECIMALI_PUNTI
-    return f"{formatta_punti(minimo)} – {formatta_punti(massimo)}"
+    return f"{formatta_numero(minimo)} – {formatta_numero(massimo)}"
 
 
 def stile_rank(lettera: str) -> str:
@@ -323,30 +447,40 @@ def stile_rank(lettera: str) -> str:
     return f"background-color: {fascia['sfondo']}; color: {fascia['testo']}; font-weight: 700;"
 
 
+def descrivi_criterio(criterio: dict) -> str:
+    """Spiegazione breve di come un criterio assegna i punti."""
+    if not criterio["conta"]:
+        return "Non conteggiato per ora (punti delle opzioni da definire)"
+    if criterio["tipo"] == "menu":
+        return "Punti per opzione: " + ", ".join(
+            f"{opzione} = {formatta_numero(punti)}" for opzione, punti in criterio["opzioni"].items()
+        )
+    tetto = formatta_numero(criterio["tetto"])
+    if len(criterio["colonne"]) > 1:
+        return f"Proporzionali alla media dei {len(criterio['colonne'])} valori, massimo a {tetto}"
+    return f"Proporzionali al valore, massimo a {tetto}"
+
+
 def mostra_regole() -> None:
-    """Tetti e punti massimi di ogni variabile, più le fasce di rank."""
+    """Come ogni criterio assegna i punti, più le fasce di rank."""
     regole = pd.DataFrame({
-        "Variabile": [v["nome"] for v in VARIABILI],
-        "Tetto massimo": [v["tetto"] for v in VARIABILI],
-        "Punti massimi": [v["punti_max"] for v in VARIABILI],
+        "Criterio": [c["nome"] for c in CRITERI],
+        "Come si calcolano i punti": [descrivi_criterio(c) for c in CRITERI],
+        "Punti massimi": [formatta_numero(c["punti_max"]) if c["conta"] else "—" for c in CRITERI],
     })
     fasce = pd.DataFrame({
         COLONNA_RANK: [f["lettera"] for f in FASCE_RANK],
-        "Punti totali": [intervallo_fascia(i) for i in range(len(FASCE_RANK))],
+        COLONNA_PUNTEGGIO: [intervallo_fascia(i) for i in range(len(FASCE_RANK))],
     })
 
     with st.expander("Regole di punteggio"):
-        colonna_variabili, colonna_fasce = st.columns([3, 2])
-        with colonna_variabili:
-            st.markdown("**Punti per variabile**")
-            st.dataframe(
-                regole,
-                hide_index=True,
-                column_config={"Tetto massimo": st.column_config.NumberColumn(format="localized")},
-            )
+        colonna_criteri, colonna_fasce = st.columns([3, 1])
+        with colonna_criteri:
+            st.markdown("**Punti per criterio**")
+            st.dataframe(regole, hide_index=True)
             st.caption(
-                "I punti sono proporzionali al tetto massimo; chi lo supera prende i punti massimi. "
-                f"Punteggio massimo totale: {PUNTEGGIO_MAX}."
+                f"I punti dei criteri conteggiati (massimo {PUNTI_TOTALI_MAX}) vengono sommati "
+                f"e riportati su {SCALA_PUNTEGGIO}: da questo punteggio dipende il rank."
             )
         with colonna_fasce:
             st.markdown("**Fasce di rank**")
@@ -394,10 +528,20 @@ def mostra_inserimento() -> pd.DataFrame:
     Ritorna la tabella così come è stata inviata l'ultima volta.
     """
     config_colonne = {COLONNA_CLIENTE: st.column_config.TextColumn(COLONNA_CLIENTE)}
-    for variabile in VARIABILI:
-        config_colonne[variabile["nome"]] = st.column_config.NumberColumn(
-            variabile["nome"], min_value=0, format="localized"
-        )
+    for criterio in CRITERI:
+        for colonna in criterio["colonne"]:
+            if criterio["tipo"] == "menu":
+                config_colonne[colonna] = st.column_config.SelectboxColumn(
+                    colonna, options=list(criterio["opzioni"]), help=criterio["aiuto"]
+                )
+            else:
+                config_colonne[colonna] = st.column_config.NumberColumn(
+                    colonna,
+                    min_value=criterio["minimo"],
+                    max_value=criterio["massimo"],
+                    format="localized",
+                    help=criterio["aiuto"],
+                )
 
     if st.session_state.foglio_attivo:
         testo_pulsante = "Salva e aggiorna valutazione"
@@ -461,7 +605,7 @@ def mostra_stato_salvataggio(tabella: pd.DataFrame) -> None:
 
 
 def mostra_riepilogo_rank(risultati: pd.DataFrame) -> None:
-    """Un riquadro per ogni fascia: lettera, numero di clienti e intervallo di punti."""
+    """Un riquadro per ogni fascia: lettera, numero di clienti e intervallo di punteggio."""
     conteggi = risultati[COLONNA_RANK].value_counts()
 
     for indice, (colonna, fascia) in enumerate(zip(st.columns(len(FASCE_RANK)), FASCE_RANK)):
@@ -492,14 +636,15 @@ def mostra_tabella_risultati(risultati: pd.DataFrame) -> None:
     config_colonne = {
         COLONNA_RANK: st.column_config.TextColumn(COLONNA_RANK, width="small"),
         COLONNA_CLIENTE: st.column_config.TextColumn(COLONNA_CLIENTE, width="medium"),
-        COLONNA_TOTALE: st.column_config.ProgressColumn(
-            f"{COLONNA_TOTALE} (su {PUNTEGGIO_MAX})",
-            min_value=0, max_value=PUNTEGGIO_MAX, format="localized", color=COLORE_BARRA_TOTALE,
+        COLONNA_PUNTEGGIO: st.column_config.ProgressColumn(
+            f"{COLONNA_PUNTEGGIO} (su {SCALA_PUNTEGGIO})",
+            min_value=0, max_value=SCALA_PUNTEGGIO, format="localized", color=COLORE_BARRA_PUNTEGGIO,
         ),
     }
-    for variabile in VARIABILI:
-        config_colonne[colonna_punti(variabile)] = st.column_config.NumberColumn(
-            colonna_punti(variabile), format="localized"
+    for criterio in CRITERI_CONTEGGIATI:
+        config_colonne[colonna_punti(criterio)] = st.column_config.NumberColumn(
+            f"{colonna_punti(criterio)} (su {formatta_numero(criterio['punti_max'])})",
+            format="localized",
         )
 
     st.dataframe(
@@ -520,7 +665,7 @@ def mostra_valutazione(clienti: pd.DataFrame) -> None:
 
     risultati = calcola_risultati(clienti)
     valutati = "1 cliente valutato" if len(risultati) == 1 else f"{len(risultati)} clienti valutati"
-    st.caption(f"{valutati} · rank assegnato in base al punteggio totale (massimo {PUNTEGGIO_MAX} punti)")
+    st.caption(f"{valutati} · rank assegnato in base al punteggio su {SCALA_PUNTEGGIO}")
 
     mostra_riepilogo_rank(risultati)
 

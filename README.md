@@ -4,13 +4,23 @@ Applicazione web in Streamlit per dare un punteggio e un rank (A-E) ai clienti.
 
 ## Come funziona
 
-1. I clienti si inseriscono a mano nella tabella, una riga per cliente.
-2. Per ogni variabile il cliente riceve punti **in proporzione al tetto massimo**
-   (es. tetto 100, punti massimi 20: con 50 prende 10 punti, con 59 ne prende 11,8).
-   Chi supera il tetto prende i punti massimi.
-3. I punti delle 5 variabili si sommano e a ogni cliente viene assegnato un **rank**:
+1. I clienti si inseriscono a mano nella tabella, una riga per cliente,
+   poi si preme **Salva e aggiorna valutazione**.
+2. Ogni criterio assegna al massimo 20 punti:
 
-   | Rank | Punti totali |
+   | Criterio | Cosa si inserisce | Punti |
+   |---|---|---|
+   | Categoria | menu a tendina (1–8) | non conteggiato per ora: i punti delle opzioni sono da definire |
+   | Fatturato | fatturato annuo (€) | proporzionali, 20 punti da 10.000.000 € in su |
+   | Fatturato storico | fatturato degli ultimi 3 anni (3 colonne) | proporzionali alla media, 20 punti da 10.000.000 € in su |
+   | Dipendenti | numero di dipendenti | proporzionali, 20 punti da 100 in su |
+   | Potenzialità | voto da 1 a 10 | proporzionali al voto (10 = 20 punti) |
+
+3. I punti dei criteri conteggiati si sommano e vengono **riportati su 100**
+   (oggi il massimo è 80 perché la Categoria non conta: 64 punti = 80 su 100).
+   Dal punteggio su 100 dipende il **rank**:
+
+   | Rank | Punteggio |
    |---|---|
    | A | 80 o più |
    | B | da 60 a meno di 80 |
@@ -21,7 +31,7 @@ Applicazione web in Streamlit per dare un punteggio e un rank (A-E) ai clienti.
    Nella sezione **Valutazione** un riquadro per fascia mostra quanti clienti ci sono in ogni rank;
    sotto, il dettaglio per cliente è ordinato dal punteggio più alto al più basso.
 
-Le righe incomplete o con valori negativi vengono escluse dalla valutazione con un avviso.
+Le righe incomplete o con valori fuori dai limiti vengono escluse dalla valutazione con un avviso.
 
 ## Dove modificare
 
@@ -29,12 +39,11 @@ Tutto è in `app.py`:
 
 | Cosa | Dove |
 |---|---|
-| Nomi delle variabili, tetti massimi, punti massimi | lista `VARIABILI` |
-| Formula dei punti di una variabile | funzione `calcola_punti()` — cerca `# TODO` |
+| Criteri: nomi, colonne, tetti, limiti, punti massimi | lista `CRITERI` |
+| Opzioni del menu e punti di ciascuna | `CRITERI` → criterio "Categoria" → `opzioni` (e `conta: True` per conteggiarlo) |
+| Formula dei punti proporzionali | funzione `calcola_punti()` — cerca `# TODO` |
 | Fasce di rank (lettere, soglie e colori) | lista `FASCE_RANK` |
-| Somma dei punti, rank e ordinamento | funzioni `calcola_rank()` e `calcola_risultati()` |
-| Controlli sui dati inseriti | funzione `prepara_clienti()` |
-| Decimali dei punteggi | `DECIMALI_PUNTI` |
+| Controlli sui dati inseriti | funzione `problemi_riga()` |
 
 ## Salvataggio su Google Fogli
 
@@ -71,8 +80,9 @@ Senza configurazione l'app funziona lo stesso, ma i dati si perdono ricaricando 
    Salva: l'app si riavvia e sotto la tabella compare il pulsante **Salva e aggiorna valutazione**.
 
 Note:
-- La prima riga del foglio contiene le intestazioni (`Cliente`, `Variabile 1`, …).
-  Se in `VARIABILI` rinomini una variabile, rinomina anche la colonna nel foglio.
+- La prima riga del foglio contiene le intestazioni (`Cliente`, `Categoria`, `Fatturato`, …).
+  Se in `CRITERI` rinomini o aggiungi colonne, i valori delle colonne cambiate
+  vanno reinseriti (o rinominati anche nel foglio).
 - Se due persone modificano i dati nello stesso momento, vale l'ultimo salvataggio.
 
 ## Esecuzione in locale
