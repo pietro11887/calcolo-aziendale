@@ -211,19 +211,53 @@ def salvataggio_configurato() -> bool:
         return False
 
 
+class ErroreConfigurazione(Exception):
+    """I secrets ci sono ma sono compilati in modo errato."""
+
+
+def leggi_configurazione() -> tuple[str, dict]:
+    """
+    Legge dai secrets l'URL del foglio e le credenziali dell'account di servizio,
+    controllando che siano compilati correttamente.
+    """
+    config = st.secrets[SEZIONE_SECRETS]
+
+    url = str(config["url"]).strip() if "url" in config else ""
+    if not url.startswith("https://docs.google.com/spreadsheets/"):
+        raise ErroreConfigurazione(
+            "il valore «url» non è il link di un foglio Google "
+            "(deve iniziare con https://docs.google.com/spreadsheets/)"
+        )
+
+    testo = str(config["credenziali"]) if "credenziali" in config else ""
+    try:
+        credenziali = json.loads(testo)
+    except json.JSONDecodeError:
+        raise ErroreConfigurazione(
+            "il valore «credenziali» non contiene il testo del file JSON. "
+            "Apri il file .json con Blocco note, copia tutto il contenuto (inizia con { e finisce con }) "
+            "e incollalo tra le due righe ''' al posto del testo attuale"
+        ) from None
+    if not isinstance(credenziali, dict) or credenziali.get("type") != "service_account":
+        raise ErroreConfigurazione(
+            "il testo in «credenziali» non è la chiave JSON di un account di servizio Google"
+        )
+
+    return url, credenziali
+
+
 @st.cache_resource(show_spinner=False)
 def apri_foglio():
     """Collegamento al primo foglio del documento Google indicato nei secrets."""
-    config = st.secrets[SEZIONE_SECRETS]
-    credenziali = json.loads(config["credenziali"])
+    url, credenziali = leggi_configurazione()
     client = gspread.service_account_from_dict(credenziali)
-    return client.open_by_url(config["url"]).sheet1
+    return client.open_by_url(url).sheet1
 
 
 def email_account_servizio() -> str:
     """Indirizzo dell'account di servizio, con cui va condiviso il foglio."""
     try:
-        return json.loads(st.secrets[SEZIONE_SECRETS]["credenziali"])["client_email"]
+        return leggi_configurazione()[1]["client_email"]
     except Exception:
         return "l'indirizzo client_email del file delle credenziali"
 
@@ -336,6 +370,11 @@ def carica_dati_iniziali() -> None:
         with st.spinner("Caricamento dei clienti salvati..."):
             st.session_state.clienti_salvati = leggi_clienti(apri_foglio())
         st.session_state.foglio_attivo = True
+    except ErroreConfigurazione as errore:
+        st.session_state.errore_foglio = (
+            f"Salvataggio non configurato correttamente: {errore}. "
+            "Correggi i Secrets dell'app su Streamlit, salva e ricarica la pagina."
+        )
     except Exception as errore:
         # Con la lettura fallita il salvataggio resta disattivato,
         # così non si rischia di sovrascrivere il foglio con una tabella vuota.
