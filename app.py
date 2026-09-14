@@ -1,16 +1,19 @@
 """
-Tool di calcolo aziendale - struttura base in Streamlit.
+Valutazione clienti - Streamlit.
+
+Funzionamento:
+    1. L'utente inserisce a mano i clienti in una tabella (una riga per cliente).
+    2. Per ogni variabile il cliente riceve punti in proporzione al tetto massimo.
+    3. I punti vengono sommati e i clienti ordinati in una classifica.
 
 Organizzazione del file:
-    1. CONFIGURAZIONE  -> titolo, descrizione, impostazioni dei campi
-    2. CALCOLO         -> funzione `calcola()` (qui vanno le formule reali)
-    3. VALIDAZIONE     -> funzione `valida_input()` (controlli sui dati)
-    4. INTERFACCIA     -> sidebar, campi di input, pulsanti e output
-
-L'utente può aggiungere o togliere campi con i pulsanti ➕ / ➖:
-tutti i valori inseriti arrivano a `calcola()` come una lista.
+    1. CONFIGURAZIONE  -> variabili, tetti massimi, punti massimi
+    2. CALCOLO         -> `calcola_punti()` e `calcola_classifica()`
+    3. VALIDAZIONE     -> `prepara_clienti()` (scarta le righe incomplete)
+    4. INTERFACCIA     -> tabella di inserimento e classifica
 """
 
+import pandas as pd
 import streamlit as st
 
 
@@ -18,193 +21,195 @@ import streamlit as st
 # 1. CONFIGURAZIONE
 # =============================================================================
 
-TITOLO_APP = "Tool di Calcolo Aziendale"
+TITOLO_APP = "Valutazione Clienti"
 DESCRIZIONE_APP = (
-    "Inserisci i valori richiesti e premi **Calcola** per ottenere il risultato. "
-    "Puoi aggiungere o togliere campi con i pulsanti ➕ e ➖. "
-    "Le formule attuali sono di esempio e verranno sostituite con quelle definitive."
+    "Inserisci i clienti nella tabella, una riga per cliente. "
+    "La classifica sotto si aggiorna automaticamente."
 )
 
-CAMPI_INIZIALI = 3          # quanti campi mostrare all'apertura dell'app
-MIN_CAMPI = 1               # numero minimo di campi
-MAX_CAMPI = 10              # numero massimo di campi
+COLONNA_CLIENTE = "Cliente"
 
-CONSENTI_NEGATIVI = False   # True = i campi accettano anche valori negativi
-VALORE_DEFAULT = 0.0        # valore iniziale di ogni nuovo campo
-STEP = 1.0                  # incremento dei pulsanti +/- dentro il campo
-DECIMALI = 2                # cifre decimali mostrate nei campi e nei risultati
+# Variabili di valutazione.
+#   - nome:      intestazione della colonna nella tabella
+#   - tetto:     valore a cui si ottengono i punti massimi (oltre non si prendono punti extra)
+#   - punti_max: punti assegnati a chi raggiunge o supera il tetto
+VARIABILI = [
+    {"nome": "Variabile 1", "tetto": 10_000_000, "punti_max": 20},  # es. fatturato (€)
+    {"nome": "Variabile 2", "tetto": 100,        "punti_max": 20},  # es. numero dipendenti
+    {"nome": "Variabile 3", "tetto": 100,        "punti_max": 20},  # TODO: tetto reale
+    {"nome": "Variabile 4", "tetto": 100,        "punti_max": 20},  # TODO: tetto reale
+    {"nome": "Variabile 5", "tetto": 100,        "punti_max": 20},  # TODO: tetto reale
+]
+
+DECIMALI_PUNTI = 1
+
+COLONNA_TOTALE = "Totale punti"
+COLONNA_POSIZIONE = "Posizione"
+
+
+def colonna_punti(variabile: dict) -> str:
+    """Nome della colonna con i punti di una variabile nella classifica."""
+    return f"Punti {variabile['nome']}"
 
 
 # =============================================================================
 # 2. CALCOLO
 # =============================================================================
 
-def calcola(valori: list[float]) -> dict:
+def calcola_punti(valore: float, tetto: float, punti_max: float) -> float:
     """
-    Esegue il calcolo principale del tool.
+    Calcola i punti di UNA variabile per UN cliente.
+
+    Esempio: tetto 100 dipendenti, punti_max 20
+        50 dipendenti  -> 10 punti
+        59 dipendenti  -> 11,8 punti
+        150 dipendenti -> 20 punti (il tetto limita il punteggio)
+    """
+    # TODO: sostituire con la formula reale se il cliente ne fornisce una diversa
+    # ------------------------------------------------------------------
+    # Punti proporzionali al tetto, senza superare punti_max.
+    valore_limitato = min(max(valore, 0), tetto)
+    punti = valore_limitato / tetto * punti_max
+    # ------------------------------------------------------------------
+    return round(punti, DECIMALI_PUNTI)
+
+
+def calcola_classifica(clienti: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calcola i punti di tutti i clienti e restituisce la classifica.
 
     Parametri:
-        valori: lista dei numeri inseriti dall'utente, nell'ordine dei campi.
-                valori[0] è "Valore 1", valori[1] è "Valore 2", e così via.
-                La lunghezza dipende da quanti campi l'utente ha aggiunto.
+        clienti: tabella completa, con la colonna COLONNA_CLIENTE
+                 e una colonna numerica per ogni variabile.
 
     Ritorna:
-        Un dizionario {nome_risultato: valore}. Ogni voce viene mostrata
-        automaticamente come una metrica nell'interfaccia, quindi per
-        aggiungere o togliere un risultato basta modificare questo dizionario.
+        Tabella con posizione, cliente, punti per variabile e totale,
+        ordinata dal punteggio più alto al più basso.
     """
-    # TODO: sostituire con la formula reale fornita dal cliente
-    # ------------------------------------------------------------------
-    # Formula placeholder: somma e media di tutti i valori inseriti.
-    totale = sum(valori)
-    media = totale / len(valori)
-    # ------------------------------------------------------------------
+    classifica = pd.DataFrame({COLONNA_CLIENTE: clienti[COLONNA_CLIENTE]})
 
-    return {
-        "Totale": totale,
-        "Media": media,
-    }
+    for variabile in VARIABILI:
+        classifica[colonna_punti(variabile)] = clienti[variabile["nome"]].apply(
+            calcola_punti, tetto=variabile["tetto"], punti_max=variabile["punti_max"]
+        )
+
+    # Somma dei punti già arrotondati, così i numeri in tabella tornano sempre
+    colonne_punti = [colonna_punti(v) for v in VARIABILI]
+    classifica[COLONNA_TOTALE] = classifica[colonne_punti].sum(axis=1).round(DECIMALI_PUNTI)
+
+    # Ordina per punteggio (a parità di punti, in ordine alfabetico)
+    classifica = classifica.sort_values(
+        [COLONNA_TOTALE, COLONNA_CLIENTE], ascending=[False, True]
+    ).reset_index(drop=True)
+
+    # Clienti con lo stesso totale condividono la posizione (es. 1, 2, 2, 4)
+    posizioni = classifica[COLONNA_TOTALE].rank(method="min", ascending=False).astype(int)
+    classifica.insert(0, COLONNA_POSIZIONE, posizioni)
+
+    return classifica
 
 
 # =============================================================================
 # 3. VALIDAZIONE
 # =============================================================================
 
-def valida_input(valori: list[float]) -> list[str]:
+def prepara_clienti(tabella: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     """
-    Controlla i valori inseriti prima di eseguire il calcolo.
+    Separa le righe complete da quelle incomplete.
 
-    Ritorna una lista di messaggi di errore (lista vuota = input valido).
-    Aggiungere qui eventuali controlli specifici delle formule reali,
-    ad esempio divisori diversi da zero o un numero minimo di valori.
+    Ritorna:
+        (clienti completi da mettere in classifica, avvisi sulle righe scartate).
+        Le righe completamente vuote vengono ignorate senza avvisi.
     """
-    errori = []
+    colonne_valori = [v["nome"] for v in VARIABILI]
 
-    if not CONSENTI_NEGATIVI:
-        for numero, valore in enumerate(valori, start=1):
-            if valore < 0:
-                errori.append(f"«Valore {numero}» non può essere negativo.")
+    tabella = tabella.copy()
+    tabella[COLONNA_CLIENTE] = tabella[COLONNA_CLIENTE].astype("string").str.strip().replace("", pd.NA)
+    for nome in colonne_valori:
+        tabella[nome] = pd.to_numeric(tabella[nome], errors="coerce")
 
-    # TODO: aggiungere eventuali controlli specifici, ad esempio:
-    # if len(valori) < 2:
-    #     errori.append("Servono almeno 2 valori per questo calcolo.")
+    tabella = tabella.dropna(how="all", subset=[COLONNA_CLIENTE] + colonne_valori)
 
-    return errori
+    avvisi = []
+    complete = []
+    for numero, (_, riga) in enumerate(tabella.iterrows(), start=1):
+        nome_riga = riga[COLONNA_CLIENTE] if pd.notna(riga[COLONNA_CLIENTE]) else f"Riga {numero}"
+        mancanti = [c for c in [COLONNA_CLIENTE] + colonne_valori if pd.isna(riga[c])]
+        negativi = [c for c in colonne_valori if pd.notna(riga[c]) and riga[c] < 0]
+
+        if mancanti:
+            avvisi.append(f"{nome_riga}: manca {', '.join(mancanti)}.")
+        elif negativi:
+            avvisi.append(f"{nome_riga}: valori negativi in {', '.join(negativi)}.")
+        else:
+            complete.append(riga)
+
+    # TODO: aggiungere eventuali controlli specifici (es. clienti duplicati)
+
+    clienti = pd.DataFrame(complete, columns=tabella.columns).reset_index(drop=True)
+    return clienti, avvisi
 
 
 # =============================================================================
 # 4. INTERFACCIA
 # =============================================================================
 
-def formatta_numero(numero: float) -> str:
-    """Formatta un numero in stile italiano (1.234,56)."""
-    testo = f"{numero:,.{DECIMALI}f}"
-    return testo.replace(",", "X").replace(".", ",").replace("X", ".")
+def tabella_vuota() -> pd.DataFrame:
+    """Tabella di partenza per l'inserimento dei clienti."""
+    colonne = {COLONNA_CLIENTE: pd.Series(dtype="string")}
+    for variabile in VARIABILI:
+        colonne[variabile["nome"]] = pd.Series(dtype="float")
+    return pd.DataFrame(colonne)
 
 
-def aggiungi_campo() -> None:
-    st.session_state.num_campi = min(st.session_state.num_campi + 1, MAX_CAMPI)
-
-
-def rimuovi_campo() -> None:
-    st.session_state.num_campi = max(st.session_state.num_campi - 1, MIN_CAMPI)
-
-
-def mostra_sidebar() -> None:
-    """Note e istruzioni per l'utente."""
-    with st.sidebar:
-        st.header("ℹ️ Istruzioni")
-        st.markdown(
-            f"""
-            1. Scegli quanti valori inserire con **➕** e **➖**
-               (da {MIN_CAMPI} a {MAX_CAMPI}).
-            2. Compila i campi.
-            3. Premi **Calcola** e leggi i risultati sotto.
-            """
-        )
-        st.divider()
+def mostra_regole() -> None:
+    """Tabella con tetti e punti massimi di ogni variabile."""
+    regole = pd.DataFrame({
+        "Variabile": [v["nome"] for v in VARIABILI],
+        "Tetto massimo": [v["tetto"] for v in VARIABILI],
+        "Punti massimi": [v["punti_max"] for v in VARIABILI],
+    })
+    with st.expander("Regole di punteggio"):
+        st.dataframe(regole, hide_index=True)
+        punteggio_max = sum(v["punti_max"] for v in VARIABILI)
         st.caption(
-            "Nota: le formule attualmente in uso sono di esempio "
-            "e non rappresentano il calcolo definitivo."
+            f"I punti sono proporzionali al tetto massimo; chi lo supera prende i punti massimi. "
+            f"Punteggio massimo totale: {punteggio_max}."
         )
-
-
-def mostra_campi() -> list[float] | None:
-    """
-    Disegna i pulsanti ➕/➖ e il modulo con i campi di input.
-    Ritorna i valori inseriti se l'utente ha premuto "Calcola", altrimenti None.
-    """
-    num_campi = st.session_state.num_campi
-
-    # Il modulo invia tutti i valori insieme, così non si perdono caratteri
-    # mentre l'utente passa da un campo all'altro.
-    with st.form("form_calcolo"):
-        # Anche ➕/➖ sono pulsanti di invio del modulo: premendoli i valori
-        # già scritti vengono salvati prima di aggiungere/togliere il campo.
-        intestazione, col_rimuovi, col_aggiungi = st.columns([4, 1, 1], vertical_alignment="bottom")
-        intestazione.subheader(f"Dati di input ({num_campi})")
-        col_rimuovi.form_submit_button("➖", on_click=rimuovi_campo, disabled=num_campi <= MIN_CAMPI,
-                                       help="Togli l'ultimo campo", width="stretch")
-        col_aggiungi.form_submit_button("➕", on_click=aggiungi_campo, disabled=num_campi >= MAX_CAMPI,
-                                        help="Aggiungi un campo", width="stretch")
-
-        valori = []
-        colonne = st.columns(2)
-        for i in range(num_campi):
-            with colonne[i % 2]:
-                valori.append(
-                    st.number_input(
-                        label=f"Valore {i + 1}",
-                        min_value=None if CONSENTI_NEGATIVI else 0.0,
-                        value=VALORE_DEFAULT,
-                        step=STEP,
-                        format=f"%.{DECIMALI}f",
-                        key=f"valore_{i}",
-                    )
-                )
-        premuto = st.form_submit_button("Calcola", type="primary", width="stretch")
-
-    return valori if premuto else None
-
-
-def mostra_risultati(risultati: dict) -> None:
-    """Mostra ogni risultato restituito da `calcola()` come metrica."""
-    st.success("Calcolo completato.")
-    st.subheader("Risultati")
-
-    colonne = st.columns(len(risultati))
-    for colonna, (nome, valore) in zip(colonne, risultati.items()):
-        colonna.metric(label=nome, value=formatta_numero(valore))
 
 
 def main() -> None:
-    st.set_page_config(page_title=TITOLO_APP, page_icon="🧮", layout="centered")
-
-    if "num_campi" not in st.session_state:
-        st.session_state.num_campi = CAMPI_INIZIALI
+    st.set_page_config(page_title=TITOLO_APP, page_icon="📊", layout="wide")
 
     st.title(TITOLO_APP)
     st.markdown(DESCRIZIONE_APP)
+    mostra_regole()
 
-    mostra_sidebar()
+    st.subheader("Clienti")
+    config_colonne = {COLONNA_CLIENTE: st.column_config.TextColumn(COLONNA_CLIENTE)}
+    for variabile in VARIABILI:
+        config_colonne[variabile["nome"]] = st.column_config.NumberColumn(
+            variabile["nome"], min_value=0, format="localized"
+        )
 
-    valori = mostra_campi()
-    if valori is None:
+    tabella = st.data_editor(
+        tabella_vuota(),
+        num_rows="dynamic",
+        column_config=config_colonne,
+        hide_index=True,
+        key="tabella_clienti",
+    )
+
+    clienti, avvisi = prepara_clienti(tabella)
+    for avviso in avvisi:
+        st.warning(f"Escluso dalla classifica — {avviso}")
+
+    st.subheader("Classifica")
+    if clienti.empty:
+        st.info("Aggiungi almeno un cliente con tutti i valori per vedere la classifica.")
         return
 
-    errori = valida_input(valori)
-    if errori:
-        for errore in errori:
-            st.error(errore)
-        return
-
-    try:
-        risultati = calcola(valori)
-    except Exception as e:  # es. divisione per zero nelle formule reali
-        st.error(f"Errore durante il calcolo: {e}")
-        return
-
-    mostra_risultati(risultati)
+    st.dataframe(calcola_classifica(clienti), hide_index=True)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,16 @@
-# Tool di Calcolo Aziendale
+# Valutazione Clienti
 
-Applicazione web in Streamlit con struttura pronta per un tool di calcolo.
-Le formule attuali sono **placeholder** (somma e media).
+Applicazione web in Streamlit per dare un punteggio ai clienti e ordinarli in classifica.
+
+## Come funziona
+
+1. I clienti si inseriscono a mano nella tabella, una riga per cliente.
+2. Per ogni variabile il cliente riceve punti **in proporzione al tetto massimo**
+   (es. tetto 100, punti massimi 20: con 50 prende 10 punti, con 59 ne prende 11,8).
+   Chi supera il tetto prende i punti massimi.
+3. I punti delle 5 variabili si sommano e i clienti vengono ordinati in classifica.
+
+Le righe incomplete o con valori negativi vengono escluse dalla classifica con un avviso.
 
 ## Dove modificare
 
@@ -9,33 +18,24 @@ Tutto è in `app.py`:
 
 | Cosa | Dove |
 |---|---|
-| Formula di calcolo | funzione `calcola()` — cerca `# TODO` |
-| Numero di campi (iniziale, minimo, massimo) | `CAMPI_INIZIALI`, `MIN_CAMPI`, `MAX_CAMPI` |
-| Valori negativi ammessi o no | `CONSENTI_NEGATIVI` |
-| Controlli sui dati | funzione `valida_input()` |
-| Titolo e descrizione | `TITOLO_APP`, `DESCRIZIONE_APP` |
-
-L'utente aggiunge o toglie campi con i pulsanti ➕ / ➖.
-`calcola()` riceve **una lista** con tutti i valori inseriti (`valori[0]` = Valore 1, ecc.)
-e restituisce un dizionario `{nome: valore}`: ogni voce viene mostrata automaticamente come risultato.
+| Nomi delle variabili, tetti massimi, punti massimi | lista `VARIABILI` |
+| Formula dei punti di una variabile | funzione `calcola_punti()` — cerca `# TODO` |
+| Somma e ordinamento della classifica | funzione `calcola_classifica()` |
+| Controlli sui dati inseriti | funzione `prepara_clienti()` |
+| Decimali dei punteggi | `DECIMALI_PUNTI` |
 
 ## Esecuzione in locale
 
 Richiede Python 3.10 o superiore.
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate        # Windows
-source .venv/bin/activate     # macOS / Linux
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
 L'app si apre su http://localhost:8501.
 
-## Deploy su Streamlit Community Cloud
+## Aggiornare l'app online
 
-1. Carica la cartella su un repository GitHub (`app.py` e `requirements.txt` nella root).
-2. Vai su https://share.streamlit.io e accedi con GitHub.
-3. Clicca **Create app** → scegli repository, branch e come *Main file path* `app.py`.
-4. Clicca **Deploy**. Ogni push sul branch aggiorna automaticamente l'app.
+L'app su Streamlit Community Cloud è collegata a questo repository:
+ogni `git push` sul branch `main` la aggiorna automaticamente.
