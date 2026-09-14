@@ -36,6 +36,45 @@ Tutto è in `app.py`:
 | Controlli sui dati inseriti | funzione `prepara_clienti()` |
 | Decimali dei punteggi | `DECIMALI_PUNTI` |
 
+## Salvataggio su Google Fogli
+
+I clienti vengono salvati in un foglio Google privato con il pulsante
+**Salva e aggiorna valutazione** e ricaricati automaticamente all'apertura del sito.
+Le modifiche non ancora inviate con il pulsante si perdono chiudendo o ricaricando la pagina.
+Senza configurazione l'app funziona lo stesso, ma i dati si perdono ricaricando la pagina.
+
+> ⚠️ Il file JSON delle credenziali è una chiave di accesso: non caricarlo mai su GitHub
+> e non condividerlo. Va incollato solo nei *Secrets* di Streamlit Cloud.
+
+### Configurazione (una volta sola)
+
+1. **Progetto Google Cloud** — su https://console.cloud.google.com crea un nuovo progetto
+   (es. `valutazione-clienti`).
+2. **Abilita l'API** — *API e servizi → Libreria*, cerca **Google Sheets API** e clicca *Abilita*.
+3. **Account di servizio** — *IAM e amministrazione → Account di servizio → Crea account di servizio*.
+   Basta il nome (es. `app-valutazione`), nessun ruolo necessario.
+4. **Chiave JSON** — apri l'account creato → scheda *Chiavi* → *Aggiungi chiave → Crea nuova chiave → JSON*.
+   Viene scaricato un file `.json`: conservalo in un posto sicuro.
+5. **Foglio Google** — crea un foglio vuoto (https://sheets.new), poi *Condividi* e aggiungi come
+   **Editor** l'indirizzo `client_email` scritto nel file JSON (finisce con `iam.gserviceaccount.com`).
+6. **Secrets su Streamlit** — su https://share.streamlit.io apri il menu dell'app →
+   *Settings → Secrets* e incolla, sostituendo l'URL e il contenuto del file JSON:
+
+   ```toml
+   [google_sheets]
+   url = "https://docs.google.com/spreadsheets/d/..."
+   credenziali = '''
+   { ...incolla qui tutto il contenuto del file JSON... }
+   '''
+   ```
+
+   Salva: l'app si riavvia e sotto la tabella compare il pulsante **Salva e aggiorna valutazione**.
+
+Note:
+- La prima riga del foglio contiene le intestazioni (`Cliente`, `Variabile 1`, …).
+  Se in `VARIABILI` rinomini una variabile, rinomina anche la colonna nel foglio.
+- Se due persone modificano i dati nello stesso momento, vale l'ultimo salvataggio.
+
 ## Esecuzione in locale
 
 Richiede Python 3.10 o superiore.

@@ -5,14 +5,19 @@ Funzionamento:
     1. L'utente inserisce a mano i clienti in una tabella (una riga per cliente).
     2. Per ogni variabile il cliente riceve punti in proporzione al tetto massimo.
     3. I punti vengono sommati e a ogni cliente viene assegnato un rank (A-E).
+    4. I clienti vengono salvati su un foglio Google (se configurato nei secrets).
 
 Organizzazione del file:
     1. CONFIGURAZIONE  -> variabili, tetti massimi, punti massimi, fasce di rank
     2. CALCOLO         -> `calcola_punti()`, `calcola_rank()` e `calcola_risultati()`
-    3. VALIDAZIONE     -> `prepara_clienti()` (scarta le righe incomplete)
-    4. INTERFACCIA     -> tabella di inserimento e risultati
+    3. VALIDAZIONE     -> `normalizza_tabella()` e `prepara_clienti()`
+    4. SALVATAGGIO     -> lettura e scrittura dei clienti su Google Fogli
+    5. INTERFACCIA     -> inserimento, salvataggio e valutazione
 """
 
+import json
+
+import gspread
 import pandas as pd
 import streamlit as st
 
@@ -23,14 +28,14 @@ import streamlit as st
 
 TITOLO_APP = "Valutazione Clienti"
 DESCRIZIONE_APP = (
-    "Inserisci i clienti nella tabella, una riga per cliente. "
-    "Punti e rank si aggiornano automaticamente sotto."
+    "Inserisci i clienti nella tabella, una riga per cliente, "
+    "poi premi il pulsante sotto la tabella per aggiornare punti e rank."
 )
 
 COLONNA_CLIENTE = "Cliente"
 
 # Variabili di valutazione.
-#   - nome:      intestazione della colonna nella tabella
+#   - nome:      intestazione della colonna nella tabella (e nel foglio Google)
 #   - tetto:     valore a cui si ottengono i punti massimi (oltre non si prendono punti extra)
 #   - punti_max: punti assegnati a chi raggiunge o supera il tetto
 VARIABILI = [
@@ -41,6 +46,7 @@ VARIABILI = [
     {"nome": "Variabile 5", "tetto": 100,        "punti_max": 20},  # TODO: tetto reale
 ]
 
+COLONNE_CLIENTI = [COLONNA_CLIENTE] + [v["nome"] for v in VARIABILI]
 PUNTEGGIO_MAX = sum(v["punti_max"] for v in VARIABILI)
 
 # Fasce di rank, dalla più alta alla più bassa. Un cliente riceve la prima
@@ -62,6 +68,9 @@ COLORE_BARRA_TOTALE = "#3B5B7A"
 
 COLONNA_TOTALE = "Totale punti"
 COLONNA_RANK = "Rank"
+
+# Sezione dei secrets di Streamlit con l'URL del foglio Google e le credenziali (vedi README)
+SEZIONE_SECRETS = "google_sheets"
 
 
 def colonna_punti(variabile: dict) -> str:
@@ -139,6 +148,26 @@ def calcola_risultati(clienti: pd.DataFrame) -> pd.DataFrame:
 # 3. VALIDAZIONE
 # =============================================================================
 
+def normalizza_tabella(tabella: pd.DataFrame) -> pd.DataFrame:
+    """
+    Riporta la tabella dei clienti a un formato standard: colonne nell'ordine
+    di COLONNE_CLIENTI, nomi senza spazi ai lati, valori numerici, niente righe vuote.
+    """
+    tabella = tabella.reindex(columns=COLONNE_CLIENTI).copy()
+    tabella[COLONNA_CLIENTE] = (
+        tabella[COLONNA_CLIENTE].astype("string").str.strip().replace("", pd.NA)
+    )
+    for variabile in VARIABILI:
+        nome = variabile["nome"]
+        tabella[nome] = pd.to_numeric(tabella[nome], errors="coerce").astype("float")
+    return tabella.dropna(how="all").reset_index(drop=True)
+
+
+def tabella_vuota() -> pd.DataFrame:
+    """Tabella dei clienti senza righe, con colonne e tipi corretti."""
+    return normalizza_tabella(pd.DataFrame(columns=COLONNE_CLIENTI))
+
+
 def prepara_clienti(tabella: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     """
     Separa le righe complete da quelle incomplete.
@@ -148,19 +177,13 @@ def prepara_clienti(tabella: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         Le righe completamente vuote vengono ignorate senza avvisi.
     """
     colonne_valori = [v["nome"] for v in VARIABILI]
-
-    tabella = tabella.copy()
-    tabella[COLONNA_CLIENTE] = tabella[COLONNA_CLIENTE].astype("string").str.strip().replace("", pd.NA)
-    for nome in colonne_valori:
-        tabella[nome] = pd.to_numeric(tabella[nome], errors="coerce")
-
-    tabella = tabella.dropna(how="all", subset=[COLONNA_CLIENTE] + colonne_valori)
+    tabella = normalizza_tabella(tabella)
 
     avvisi = []
     complete = []
     for numero, (_, riga) in enumerate(tabella.iterrows(), start=1):
         nome_riga = riga[COLONNA_CLIENTE] if pd.notna(riga[COLONNA_CLIENTE]) else f"Riga {numero}"
-        mancanti = [c for c in [COLONNA_CLIENTE] + colonne_valori if pd.isna(riga[c])]
+        mancanti = [c for c in COLONNE_CLIENTI if pd.isna(riga[c])]
         negativi = [c for c in colonne_valori if pd.notna(riga[c]) and riga[c] < 0]
 
         if mancanti:
@@ -177,16 +200,70 @@ def prepara_clienti(tabella: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 
 
 # =============================================================================
-# 4. INTERFACCIA
+# 4. SALVATAGGIO (Google Fogli)
 # =============================================================================
 
-def tabella_vuota() -> pd.DataFrame:
-    """Tabella di partenza per l'inserimento dei clienti."""
-    colonne = {COLONNA_CLIENTE: pd.Series(dtype="string")}
-    for variabile in VARIABILI:
-        colonne[variabile["nome"]] = pd.Series(dtype="float")
-    return pd.DataFrame(colonne)
+def salvataggio_configurato() -> bool:
+    """True se nei secrets di Streamlit sono presenti i dati del foglio Google."""
+    try:
+        return SEZIONE_SECRETS in st.secrets
+    except Exception:  # nessun file di secrets, es. esecuzione in locale
+        return False
 
+
+@st.cache_resource(show_spinner=False)
+def apri_foglio():
+    """Collegamento al primo foglio del documento Google indicato nei secrets."""
+    config = st.secrets[SEZIONE_SECRETS]
+    credenziali = json.loads(config["credenziali"])
+    client = gspread.service_account_from_dict(credenziali)
+    return client.open_by_url(config["url"]).sheet1
+
+
+def email_account_servizio() -> str:
+    """Indirizzo dell'account di servizio, con cui va condiviso il foglio."""
+    try:
+        return json.loads(st.secrets[SEZIONE_SECRETS]["credenziali"])["client_email"]
+    except Exception:
+        return "l'indirizzo client_email del file delle credenziali"
+
+
+def leggi_clienti(foglio) -> pd.DataFrame:
+    """Legge i clienti salvati. La prima riga del foglio contiene le intestazioni."""
+    righe = foglio.get_all_values(value_render_option="UNFORMATTED_VALUE")
+    if not righe:
+        return tabella_vuota()
+
+    intestazioni = [str(c).strip() for c in righe[0]]
+    n = len(intestazioni)
+    dati = [list(r[:n]) + [""] * (n - len(r)) for r in righe[1:]]
+
+    tabella = pd.DataFrame(dati, columns=intestazioni)
+    tabella = tabella.loc[:, ~tabella.columns.duplicated()]
+    return normalizza_tabella(tabella)
+
+
+def scrivi_clienti(foglio, tabella: pd.DataFrame) -> None:
+    """Sovrascrive il foglio con i clienti: intestazioni e una riga per cliente."""
+    tabella = normalizza_tabella(tabella)
+    righe_precedenti = len(foglio.get_all_values())
+
+    valori = [COLONNE_CLIENTI]
+    for riga in tabella.itertuples(index=False):
+        valori.append([
+            "" if pd.isna(v) else (v if isinstance(v, str) else float(v)) for v in riga
+        ])
+
+    # Prima si scrivono i dati nuovi, poi si svuotano le righe in eccesso:
+    # se la scrittura non riesce, i dati salvati in precedenza restano intatti.
+    foglio.update(values=valori, range_name="A1", value_input_option="RAW")
+    if righe_precedenti > len(valori):
+        foglio.batch_clear([f"A{len(valori) + 1}:Z{righe_precedenti}"])
+
+
+# =============================================================================
+# 5. INTERFACCIA
+# =============================================================================
 
 def formatta_punti(numero: float) -> str:
     """Punteggio in stile italiano, senza decimali inutili (80 -> "80", 79.9 -> "79,9")."""
@@ -240,6 +317,108 @@ def mostra_regole() -> None:
         with colonna_fasce:
             st.markdown("**Fasce di rank**")
             st.dataframe(fasce.style.map(stile_rank, subset=[COLONNA_RANK]), hide_index=True)
+
+
+def carica_dati_iniziali() -> None:
+    """All'apertura della pagina legge i clienti salvati (una volta per sessione)."""
+    if "clienti_salvati" in st.session_state:
+        return
+
+    st.session_state.clienti_salvati = tabella_vuota()
+    st.session_state.versione_tabella = 0
+    st.session_state.foglio_attivo = False
+    st.session_state.errore_foglio = None
+
+    if not salvataggio_configurato():
+        return
+
+    try:
+        with st.spinner("Caricamento dei clienti salvati..."):
+            st.session_state.clienti_salvati = leggi_clienti(apri_foglio())
+        st.session_state.foglio_attivo = True
+    except Exception as errore:
+        # Con la lettura fallita il salvataggio resta disattivato,
+        # così non si rischia di sovrascrivere il foglio con una tabella vuota.
+        st.session_state.errore_foglio = (
+            f"Impossibile leggere i dati da Google Fogli ({errore}). "
+            f"Controlla l'URL del foglio e che sia condiviso come Editor con {email_account_servizio()}, "
+            "poi ricarica la pagina. Nel frattempo il salvataggio è disattivato."
+        )
+
+
+def mostra_inserimento() -> pd.DataFrame:
+    """
+    Tabella di inserimento dei clienti dentro un modulo.
+
+    Il modulo invia le modifiche solo alla pressione del pulsante: mentre l'utente
+    compila le celle la pagina non si ricarica, così nessun valore va perso.
+    Ritorna la tabella così come è stata inviata l'ultima volta.
+    """
+    config_colonne = {COLONNA_CLIENTE: st.column_config.TextColumn(COLONNA_CLIENTE)}
+    for variabile in VARIABILI:
+        config_colonne[variabile["nome"]] = st.column_config.NumberColumn(
+            variabile["nome"], min_value=0, format="localized"
+        )
+
+    if st.session_state.foglio_attivo:
+        testo_pulsante = "Salva e aggiorna valutazione"
+    else:
+        testo_pulsante = "Aggiorna valutazione"
+
+    with st.form("form_clienti", border=False):
+        tabella = st.data_editor(
+            st.session_state.clienti_salvati,
+            num_rows="dynamic",
+            column_config=config_colonne,
+            hide_index=True,
+            key=f"tabella_clienti_{st.session_state.versione_tabella}",
+        )
+        inviato = st.form_submit_button(testo_pulsante, type="primary")
+
+    if inviato and st.session_state.foglio_attivo:
+        salva_tabella(tabella)
+
+    return tabella
+
+
+def salva_tabella(tabella: pd.DataFrame) -> None:
+    """Scrive la tabella su Google Fogli, se è cambiata rispetto all'ultimo salvataggio."""
+    nuova = normalizza_tabella(tabella)
+    if nuova.equals(st.session_state.clienti_salvati):
+        return
+
+    try:
+        scrivi_clienti(apri_foglio(), nuova)
+    except Exception as errore:
+        st.error(f"Salvataggio non riuscito ({errore}). Riprova tra qualche secondo.")
+        return
+
+    st.session_state.clienti_salvati = nuova
+    # Nuova chiave: la tabella riparte dai dati appena salvati
+    st.session_state.versione_tabella += 1
+    st.session_state.conferma_salvataggio = True
+    st.rerun()
+
+
+def mostra_stato_salvataggio(tabella: pd.DataFrame) -> None:
+    """Indica se i dati mostrati sono salvati su Google Fogli."""
+    if st.session_state.errore_foglio:
+        st.error(st.session_state.errore_foglio)
+        return
+    if not st.session_state.foglio_attivo:
+        st.caption(
+            "Salvataggio non configurato: i dati restano solo in questa pagina "
+            "e si perdono ricaricandola."
+        )
+        return
+
+    if st.session_state.pop("conferma_salvataggio", False):
+        st.toast("Dati salvati su Google Fogli.")
+
+    if normalizza_tabella(tabella).equals(st.session_state.clienti_salvati):
+        st.caption("✓ Dati salvati su Google Fogli.")
+    else:
+        st.warning("Le ultime modifiche non sono salvate: premi di nuovo il pulsante per riprovare.")
 
 
 def mostra_riepilogo_rank(risultati: pd.DataFrame) -> None:
@@ -317,20 +496,11 @@ def main() -> None:
     st.markdown(DESCRIZIONE_APP)
     mostra_regole()
 
-    st.header("Inserimento clienti")
-    config_colonne = {COLONNA_CLIENTE: st.column_config.TextColumn(COLONNA_CLIENTE)}
-    for variabile in VARIABILI:
-        config_colonne[variabile["nome"]] = st.column_config.NumberColumn(
-            variabile["nome"], min_value=0, format="localized"
-        )
+    carica_dati_iniziali()
 
-    tabella = st.data_editor(
-        tabella_vuota(),
-        num_rows="dynamic",
-        column_config=config_colonne,
-        hide_index=True,
-        key="tabella_clienti",
-    )
+    st.header("Inserimento clienti")
+    tabella = mostra_inserimento()
+    mostra_stato_salvataggio(tabella)
 
     clienti, avvisi = prepara_clienti(tabella)
     for avviso in avvisi:
