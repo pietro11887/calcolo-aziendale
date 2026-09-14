@@ -41,18 +41,24 @@ VARIABILI = [
     {"nome": "Variabile 5", "tetto": 100,        "punti_max": 20},  # TODO: tetto reale
 ]
 
-# Fasce di rank: (lettera, punteggio minimo). Un cliente riceve la prima
-# lettera il cui minimo è raggiunto, quindi l'ordine va dal più alto al più basso.
-# Esempio: 80 -> A, 79.9 -> B.
+PUNTEGGIO_MAX = sum(v["punti_max"] for v in VARIABILI)
+
+# Fasce di rank, dalla più alta alla più bassa. Un cliente riceve la prima
+# fascia il cui punteggio minimo è raggiunto (es. 80 -> A, 79,9 -> B).
+#   - minimo:        punteggio totale minimo della fascia
+#   - testo, sfondo: colori con cui la fascia viene evidenziata
 FASCE_RANK = [
-    ("A", 80),
-    ("B", 60),
-    ("C", 40),
-    ("D", 20),
-    ("E", 0),
+    {"lettera": "A", "minimo": 80, "testo": "#1E6B43", "sfondo": "#E3F2EA"},
+    {"lettera": "B", "minimo": 60, "testo": "#3D6B1F", "sfondo": "#EDF5E1"},
+    {"lettera": "C", "minimo": 40, "testo": "#7A5A00", "sfondo": "#FFF4D6"},
+    {"lettera": "D", "minimo": 20, "testo": "#8A4B12", "sfondo": "#FDE9D8"},
+    {"lettera": "E", "minimo": 0,  "testo": "#9B2C22", "sfondo": "#FBE4E1"},
 ]
 
 DECIMALI_PUNTI = 1
+
+# Colore neutro della barra del punteggio totale (il rosso di default sembrerebbe un allarme)
+COLORE_BARRA_TOTALE = "#3B5B7A"
 
 COLONNA_TOTALE = "Totale punti"
 COLONNA_RANK = "Rank"
@@ -87,10 +93,10 @@ def calcola_punti(valore: float, tetto: float, punti_max: float) -> float:
 
 def calcola_rank(totale: float) -> str:
     """Restituisce la lettera di rank per un punteggio totale (vedi FASCE_RANK)."""
-    for lettera, minimo in FASCE_RANK:
-        if totale >= minimo:
-            return lettera
-    return FASCE_RANK[-1][0]
+    for fascia in FASCE_RANK:
+        if totale >= fascia["minimo"]:
+            return fascia["lettera"]
+    return FASCE_RANK[-1]["lettera"]
 
 
 def calcola_risultati(clienti: pd.DataFrame) -> pd.DataFrame:
@@ -182,29 +188,126 @@ def tabella_vuota() -> pd.DataFrame:
     return pd.DataFrame(colonne)
 
 
+def formatta_punti(numero: float) -> str:
+    """Punteggio in stile italiano, senza decimali inutili (80 -> "80", 79.9 -> "79,9")."""
+    testo = f"{numero:.{DECIMALI_PUNTI}f}"
+    if "." in testo:
+        testo = testo.rstrip("0").rstrip(".")
+    return testo.replace(".", ",")
+
+
+def intervallo_fascia(indice: int) -> str:
+    """Intervallo di punti di una fascia di rank, es. "60 – 79,9"."""
+    minimo = FASCE_RANK[indice]["minimo"]
+    if indice == 0:
+        massimo = PUNTEGGIO_MAX
+    else:
+        massimo = FASCE_RANK[indice - 1]["minimo"] - 10 ** -DECIMALI_PUNTI
+    return f"{formatta_punti(minimo)} – {formatta_punti(massimo)}"
+
+
+def stile_rank(lettera: str) -> str:
+    """Stile CSS della cella con il rank nella tabella dei risultati."""
+    fascia = next(f for f in FASCE_RANK if f["lettera"] == lettera)
+    return f"background-color: {fascia['sfondo']}; color: {fascia['testo']}; font-weight: 700;"
+
+
 def mostra_regole() -> None:
-    """Tabella con tetti e punti massimi di ogni variabile."""
+    """Tetti e punti massimi di ogni variabile, più le fasce di rank."""
     regole = pd.DataFrame({
         "Variabile": [v["nome"] for v in VARIABILI],
         "Tetto massimo": [v["tetto"] for v in VARIABILI],
         "Punti massimi": [v["punti_max"] for v in VARIABILI],
     })
+    fasce = pd.DataFrame({
+        COLONNA_RANK: [f["lettera"] for f in FASCE_RANK],
+        "Punti totali": [intervallo_fascia(i) for i in range(len(FASCE_RANK))],
+    })
+
     with st.expander("Regole di punteggio"):
-        st.dataframe(regole, hide_index=True)
-        punteggio_max = sum(v["punti_max"] for v in VARIABILI)
-        st.caption(
-            f"I punti sono proporzionali al tetto massimo; chi lo supera prende i punti massimi. "
-            f"Punteggio massimo totale: {punteggio_max}."
+        colonna_variabili, colonna_fasce = st.columns([3, 2])
+        with colonna_variabili:
+            st.markdown("**Punti per variabile**")
+            st.dataframe(
+                regole,
+                hide_index=True,
+                column_config={"Tetto massimo": st.column_config.NumberColumn(format="localized")},
+            )
+            st.caption(
+                "I punti sono proporzionali al tetto massimo; chi lo supera prende i punti massimi. "
+                f"Punteggio massimo totale: {PUNTEGGIO_MAX}."
+            )
+        with colonna_fasce:
+            st.markdown("**Fasce di rank**")
+            st.dataframe(fasce.style.map(stile_rank, subset=[COLONNA_RANK]), hide_index=True)
+
+
+def mostra_riepilogo_rank(risultati: pd.DataFrame) -> None:
+    """Un riquadro per ogni fascia: lettera, numero di clienti e intervallo di punti."""
+    conteggi = risultati[COLONNA_RANK].value_counts()
+
+    for indice, (colonna, fascia) in enumerate(zip(st.columns(len(FASCE_RANK)), FASCE_RANK)):
+        numero = int(conteggi.get(fascia["lettera"], 0))
+        etichetta = "cliente" if numero == 1 else "clienti"
+        opacita = 1 if numero else 0.45  # fasce vuote attenuate
+
+        # HTML su una sola riga: l'indentazione verrebbe interpretata come blocco di codice
+        colonna.markdown(
+            f'<div style="background:{fascia["sfondo"]}; color:{fascia["testo"]}; '
+            f'border-left:6px solid {fascia["testo"]}; border-radius:8px; '
+            f'padding:14px 16px; margin-bottom:10px; opacity:{opacita};">'
+            f'<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">'
+            f'<span style="font-size:2.4rem; font-weight:700; line-height:1;">{fascia["lettera"]}</span>'
+            f'<span style="text-align:right; line-height:1.1;">'
+            f'<span style="display:block; font-size:1.6rem; font-weight:600;">{numero}</span>'
+            f'<span style="display:block; font-size:0.75rem;">{etichetta}</span>'
+            f'</span></div>'
+            f'<div style="font-size:0.85rem; margin-top:10px; white-space:nowrap;">'
+            f'{intervallo_fascia(indice)} punti</div>'
+            f'</div>',
+            unsafe_allow_html=True,
         )
 
-        fasce = []
-        for i, (lettera, minimo) in enumerate(FASCE_RANK):
-            if i == 0:
-                fasce.append((lettera, f"{minimo} o più"))
-            else:
-                fasce.append((lettera, f"da {minimo} a meno di {FASCE_RANK[i - 1][1]}"))
-        st.markdown("**Fasce di rank**")
-        st.dataframe(pd.DataFrame(fasce, columns=[COLONNA_RANK, "Punti"]), hide_index=True)
+
+def mostra_tabella_risultati(risultati: pd.DataFrame) -> None:
+    """Tabella dei clienti ordinata per punteggio, con il rank evidenziato."""
+    config_colonne = {
+        COLONNA_RANK: st.column_config.TextColumn(COLONNA_RANK, width="small"),
+        COLONNA_CLIENTE: st.column_config.TextColumn(COLONNA_CLIENTE, width="medium"),
+        COLONNA_TOTALE: st.column_config.ProgressColumn(
+            f"{COLONNA_TOTALE} (su {PUNTEGGIO_MAX})",
+            min_value=0, max_value=PUNTEGGIO_MAX, format="localized", color=COLORE_BARRA_TOTALE,
+        ),
+    }
+    for variabile in VARIABILI:
+        config_colonne[colonna_punti(variabile)] = st.column_config.NumberColumn(
+            colonna_punti(variabile), format="localized"
+        )
+
+    st.dataframe(
+        risultati.style.map(stile_rank, subset=[COLONNA_RANK]),
+        hide_index=True,
+        column_config=config_colonne,
+    )
+
+
+def mostra_valutazione(clienti: pd.DataFrame) -> None:
+    """Sezione dei risultati: riepilogo per fascia e dettaglio per cliente."""
+    st.divider()
+    st.header("Valutazione")
+
+    if clienti.empty:
+        st.info("Inserisci almeno un cliente con tutti i valori per vedere punteggi e rank.")
+        return
+
+    risultati = calcola_risultati(clienti)
+    valutati = "1 cliente valutato" if len(risultati) == 1 else f"{len(risultati)} clienti valutati"
+    st.caption(f"{valutati} · rank assegnato in base al punteggio totale (massimo {PUNTEGGIO_MAX} punti)")
+
+    mostra_riepilogo_rank(risultati)
+
+    st.subheader("Dettaglio per cliente")
+    mostra_tabella_risultati(risultati)
 
 
 def main() -> None:
@@ -214,7 +317,7 @@ def main() -> None:
     st.markdown(DESCRIZIONE_APP)
     mostra_regole()
 
-    st.subheader("Clienti")
+    st.header("Inserimento clienti")
     config_colonne = {COLONNA_CLIENTE: st.column_config.TextColumn(COLONNA_CLIENTE)}
     for variabile in VARIABILI:
         config_colonne[variabile["nome"]] = st.column_config.NumberColumn(
@@ -233,12 +336,7 @@ def main() -> None:
     for avviso in avvisi:
         st.warning(f"Escluso dalla valutazione — {avviso}")
 
-    st.subheader("Risultati")
-    if clienti.empty:
-        st.info("Aggiungi almeno un cliente con tutti i valori per vedere punti e rank.")
-        return
-
-    st.dataframe(calcola_risultati(clienti), hide_index=True)
+    mostra_valutazione(clienti)
 
 
 if __name__ == "__main__":

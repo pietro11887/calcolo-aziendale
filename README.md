@@ -18,7 +18,8 @@ Applicazione web in Streamlit per dare un punteggio e un rank (A-E) ai clienti.
    | D | da 20 a meno di 40 |
    | E | meno di 20 |
 
-   I clienti sono mostrati dal punteggio più alto al più basso.
+   Nella sezione **Valutazione** un riquadro per fascia mostra quanti clienti ci sono in ogni rank;
+   sotto, il dettaglio per cliente è ordinato dal punteggio più alto al più basso.
 
 Le righe incomplete o con valori negativi vengono escluse dalla valutazione con un avviso.
 
@@ -30,7 +31,7 @@ Tutto è in `app.py`:
 |---|---|
 | Nomi delle variabili, tetti massimi, punti massimi | lista `VARIABILI` |
 | Formula dei punti di una variabile | funzione `calcola_punti()` — cerca `# TODO` |
-| Fasce di rank (lettere e soglie) | lista `FASCE_RANK` |
+| Fasce di rank (lettere, soglie e colori) | lista `FASCE_RANK` |
 | Somma dei punti, rank e ordinamento | funzioni `calcola_rank()` e `calcola_risultati()` |
 | Controlli sui dati inseriti | funzione `prepara_clienti()` |
 | Decimali dei punteggi | `DECIMALI_PUNTI` |
