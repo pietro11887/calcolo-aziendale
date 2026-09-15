@@ -106,13 +106,13 @@ PUNTI_TOTALI_MAX = sum(criterio["punti_max"] for criterio in CRITERI_CONTEGGIATI
 SCALA_PUNTEGGIO = 100
 
 # Fasce di rank, dalla più alta alla più bassa. Un cliente riceve la prima
-# fascia il cui punteggio minimo è raggiunto (es. 80 -> A, 79,9 -> B).
+# fascia il cui punteggio minimo è raggiunto (es. 76 -> A, 75,9 -> B).
 #   - minimo:        punteggio minimo della fascia (su SCALA_PUNTEGGIO)
 #   - testo, sfondo: colori con cui la fascia viene evidenziata
 FASCE_RANK = [
-    {"lettera": "A", "minimo": 80, "testo": "#1E6B43", "sfondo": "#E3F2EA"},
-    {"lettera": "B", "minimo": 60, "testo": "#3D6B1F", "sfondo": "#EDF5E1"},
-    {"lettera": "C", "minimo": 40, "testo": "#7A5A00", "sfondo": "#FFF4D6"},
+    {"lettera": "A", "minimo": 76, "testo": "#1E6B43", "sfondo": "#E3F2EA"},
+    {"lettera": "B", "minimo": 51, "testo": "#3D6B1F", "sfondo": "#EDF5E1"},
+    {"lettera": "C", "minimo": 26, "testo": "#7A5A00", "sfondo": "#FFF4D6"},
     {"lettera": "D", "minimo": 0,  "testo": "#9B2C22", "sfondo": "#FBE4E1"},
 ]
 

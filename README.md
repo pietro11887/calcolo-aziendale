@@ -23,10 +23,10 @@ Applicazione web in Streamlit per dare un punteggio e un rank (A-D) ai clienti.
 
    | Rank | Punteggio |
    |---|---|
-   | A | 80 o più |
-   | B | da 60 a meno di 80 |
-   | C | da 40 a meno di 60 |
-   | D | meno di 40 |
+   | A | da 76 a 100 |
+   | B | da 51 a meno di 76 |
+   | C | da 26 a meno di 51 |
+   | D | da 0 a meno di 26 |
 
    Nella sezione **Valutazione** un riquadro per fascia mostra quanti clienti ci sono in ogni rank;
    sotto, il dettaglio per cliente è ordinato dal punteggio più alto al più basso.
