@@ -90,12 +90,12 @@ CRITERI = [
         "nome": "Potenzialità",
         "tipo": "numero",
         "colonne": ["Potenzialità"],
-        "tetto": 10,
-        "minimo": 1,
-        "massimo": 10,
+        "tetto": 100_000,
+        "minimo": 0,
+        "massimo": 100_000,
         "conta": True,
         "punti_max": 20,
-        "aiuto": "Voto da 1 a 10 sulla potenzialità dell'azienda.",
+        "aiuto": "Potenzialità dell'azienda, valore da 0 a 100.000.",
     },
 ]
 

@@ -16,7 +16,7 @@ Applicazione web in Streamlit per dare un punteggio e un rank (A-D) ai clienti.
    | Fatturato | fatturato annuo (€) | proporzionali, 20 punti da 10.000.000 € in su |
    | Fatturato storico | fatturato totale degli ultimi 3 anni (€) | proporzionali, 20 punti da 30.000.000 € in su |
    | Dipendenti | numero di dipendenti | proporzionali, 20 punti da 100 in su |
-   | Potenzialità | voto da 1 a 10 | proporzionali al voto (10 = 20 punti) |
+   | Potenzialità | valore da 0 a 100.000 | proporzionali, 20 punti a 100.000 |
 
 3. I punti dei 5 criteri si sommano (massimo 100) e dal totale dipende il **rank**.
    Se un criterio viene escluso (`conta: False`) il totale viene riportato su 100.
