@@ -44,6 +44,7 @@ Tutto è in `app.py`:
 | Formula dei punti proporzionali | funzione `calcola_punti()` — cerca `# TODO` |
 | Fasce di rank (lettere, soglie e colori) | lista `FASCE_RANK` |
 | Controlli sui dati inseriti | funzione `problemi_riga()` |
+| Numero di versione in fondo alla pagina (x.yz, +0.01 a ogni modifica pubblicata) | `VERSIONE` |
 
 ## Esecuzione in locale
 

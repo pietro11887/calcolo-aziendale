@@ -23,6 +23,10 @@ import streamlit as st
 
 TITOLO_APP = "Calcolo Rank"
 
+# Versione mostrata in fondo alla pagina (formato x.yz):
+# aumentarla di 0.01 a ogni modifica pubblicata online.
+VERSIONE = "1.00"
+
 # Nei risultati ogni cliente è indicato con il numero di riga della tabella di inserimento
 COLONNA_RIGA = "Riga"
 
@@ -497,6 +501,15 @@ def mostra_valutazione(clienti: pd.DataFrame | None) -> None:
     mostra_tabella_risultati(risultati)
 
 
+def mostra_versione() -> None:
+    """Numero di versione in fondo alla pagina, allineato a destra."""
+    st.markdown(
+        f'<div style="text-align:right; color:#888; font-size:0.8rem; margin-top:2rem;">'
+        f"Versione {VERSIONE}</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title=TITOLO_APP, page_icon="📊", layout="wide")
 
@@ -508,15 +521,15 @@ def main() -> None:
     st.caption("I dati non vengono salvati: ricaricando o chiudendo la pagina la tabella si svuota.")
 
     # I calcoli partono solo dopo aver premuto «Calcola»
-    if not st.session_state.get("calcolato", False):
+    if st.session_state.get("calcolato", False):
+        clienti, avvisi = prepara_clienti(tabella)
+        for avviso in avvisi:
+            st.warning(f"Escluso dalla valutazione — {avviso}")
+        mostra_valutazione(clienti)
+    else:
         mostra_valutazione(None)
-        return
 
-    clienti, avvisi = prepara_clienti(tabella)
-    for avviso in avvisi:
-        st.warning(f"Escluso dalla valutazione — {avviso}")
-
-    mostra_valutazione(clienti)
+    mostra_versione()
 
 
 if __name__ == "__main__":
