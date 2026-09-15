@@ -26,7 +26,8 @@ DESCRIZIONE_APP = (
     "Inserisci i clienti nella tabella, una riga per cliente: punti e rank si aggiornano subito."
 )
 
-COLONNA_CLIENTE = "Cliente"
+# Nei risultati ogni cliente è indicato con il numero di riga della tabella di inserimento
+COLONNA_RIGA = "Riga"
 
 # Criteri di valutazione. Ogni criterio ha:
 #   - nome:      nome del criterio, usato nei risultati
@@ -98,7 +99,7 @@ CRITERI = [
     },
 ]
 
-COLONNE_CLIENTI = [COLONNA_CLIENTE] + [col for criterio in CRITERI for col in criterio["colonne"]]
+COLONNE_CLIENTI = [col for criterio in CRITERI for col in criterio["colonne"]]
 CRITERI_CONTEGGIATI = [criterio for criterio in CRITERI if criterio["conta"]]
 PUNTI_TOTALI_MAX = sum(criterio["punti_max"] for criterio in CRITERI_CONTEGGIATI)
 
@@ -177,10 +178,10 @@ def calcola_risultati(clienti: pd.DataFrame) -> pd.DataFrame:
     Calcola punti, punteggio e rank di tutti i clienti.
 
     Parametri:
-        clienti: tabella validata (almeno un cliente), con le colonne di COLONNE_CLIENTI.
+        clienti: tabella validata (almeno un cliente), con COLONNA_RIGA e le colonne di COLONNE_CLIENTI.
 
     Ritorna:
-        Tabella con rank, cliente, punteggio su SCALA_PUNTEGGIO, i valori dei criteri
+        Tabella con rank, riga, punteggio su SCALA_PUNTEGGIO, i valori dei criteri
         non conteggiati e i punti di ogni criterio, ordinata dal punteggio più alto.
     """
     punti = pd.DataFrame(index=clienti.index)
@@ -202,17 +203,15 @@ def calcola_risultati(clienti: pd.DataFrame) -> pd.DataFrame:
     risultati = pd.concat([
         pd.DataFrame({
             COLONNA_RANK: punteggio.apply(calcola_rank),
-            COLONNA_CLIENTE: clienti[COLONNA_CLIENTE],
+            COLONNA_RIGA: clienti[COLONNA_RIGA],
             COLONNA_PUNTEGGIO: punteggio,
         }),
         clienti[colonne_informative],
         punti,
     ], axis=1)
 
-    # Ordina per punteggio (a parità di punti, in ordine alfabetico)
-    return risultati.sort_values(
-        [COLONNA_PUNTEGGIO, COLONNA_CLIENTE], ascending=[False, True]
-    ).reset_index(drop=True)
+    # Ordina per punteggio (a parità di punti resta l'ordine di inserimento)
+    return risultati.sort_values(COLONNA_PUNTEGGIO, ascending=False, kind="stable").reset_index(drop=True)
 
 
 # =============================================================================
@@ -233,18 +232,16 @@ def normalizza_tabella(tabella: pd.DataFrame) -> pd.DataFrame:
     """
     Riporta la tabella dei clienti a un formato standard: colonne nell'ordine
     di COLONNE_CLIENTI, testi senza spazi ai lati, numeri come numeri, niente righe vuote.
+    L'indice delle righe viene mantenuto.
     """
     tabella = tabella.reindex(columns=COLONNE_CLIENTI).copy()
-    tabella[COLONNA_CLIENTE] = (
-        tabella[COLONNA_CLIENTE].astype("string").str.strip().replace("", pd.NA)
-    )
     for criterio in CRITERI:
         for colonna in criterio["colonne"]:
             if criterio["tipo"] == "menu":
                 tabella[colonna] = tabella[colonna].map(testo_opzione).astype("string")
             else:
                 tabella[colonna] = pd.to_numeric(tabella[colonna], errors="coerce").astype("float")
-    return tabella.dropna(how="all").reset_index(drop=True)
+    return tabella.dropna(how="all")
 
 
 def tabella_vuota() -> pd.DataFrame:
@@ -256,8 +253,8 @@ def problemi_riga(riga: pd.Series) -> list[str]:
     """Elenco dei problemi di una riga (lista vuota = riga valida)."""
     problemi = []
 
-    # Obbligatori: il nome e le colonne dei criteri che entrano nel punteggio
-    obbligatorie = [COLONNA_CLIENTE] + [col for c in CRITERI_CONTEGGIATI for col in c["colonne"]]
+    # Obbligatorie: le colonne dei criteri che entrano nel punteggio
+    obbligatorie = [col for c in CRITERI_CONTEGGIATI for col in c["colonne"]]
     mancanti = [colonna for colonna in obbligatorie if pd.isna(riga[colonna])]
     if mancanti:
         problemi.append(f"manca {', '.join(mancanti)}")
@@ -285,23 +282,26 @@ def prepara_clienti(tabella: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     Separa le righe complete e valide da quelle da correggere.
 
     Ritorna:
-        (clienti da valutare, avvisi sulle righe scartate).
+        (clienti da valutare con la colonna COLONNA_RIGA, avvisi sulle righe scartate).
         Le righe completamente vuote vengono ignorate senza avvisi.
     """
+    # Numero di riga come appare nella tabella di inserimento (1, 2, 3, ...)
+    tabella = tabella.reset_index(drop=True)
+    tabella.index = tabella.index + 1
     tabella = normalizza_tabella(tabella)
 
     avvisi = []
     valide = []
-    for numero, (_, riga) in enumerate(tabella.iterrows(), start=1):
+    for numero, riga in tabella.iterrows():
         problemi = problemi_riga(riga)
         if problemi:
-            nome_riga = riga[COLONNA_CLIENTE] if pd.notna(riga[COLONNA_CLIENTE]) else f"Riga {numero}"
-            avvisi.append(f"{nome_riga}: {'; '.join(problemi)}.")
+            avvisi.append(f"Riga {numero}: {'; '.join(problemi)}.")
         else:
             valide.append(riga)
 
-    clienti = pd.DataFrame(valide, columns=tabella.columns).reset_index(drop=True)
-    return clienti, avvisi
+    clienti = pd.DataFrame(valide, columns=tabella.columns)
+    clienti.insert(0, COLONNA_RIGA, [f"Riga {numero}" for numero in clienti.index])
+    return clienti.reset_index(drop=True), avvisi
 
 
 # =============================================================================
@@ -374,7 +374,7 @@ def mostra_regole() -> None:
 
 def mostra_inserimento() -> pd.DataFrame:
     """Tabella di inserimento dei clienti. Ogni modifica aggiorna subito la valutazione."""
-    config_colonne = {COLONNA_CLIENTE: st.column_config.TextColumn(COLONNA_CLIENTE)}
+    config_colonne = {}
     for criterio in CRITERI:
         for colonna in criterio["colonne"]:
             if criterio["tipo"] == "menu":
@@ -430,7 +430,7 @@ def mostra_tabella_risultati(risultati: pd.DataFrame) -> None:
     """Tabella dei clienti ordinata per punteggio, con il rank evidenziato."""
     config_colonne = {
         COLONNA_RANK: st.column_config.TextColumn(COLONNA_RANK, width="small"),
-        COLONNA_CLIENTE: st.column_config.TextColumn(COLONNA_CLIENTE, width="medium"),
+        COLONNA_RIGA: st.column_config.TextColumn(COLONNA_RIGA, width="small"),
         COLONNA_PUNTEGGIO: st.column_config.ProgressColumn(
             f"{COLONNA_PUNTEGGIO} (su {SCALA_PUNTEGGIO})",
             min_value=0, max_value=SCALA_PUNTEGGIO, format="localized", color=COLORE_BARRA_PUNTEGGIO,
