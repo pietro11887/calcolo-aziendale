@@ -14,7 +14,7 @@ Applicazione web in Streamlit per dare un punteggio e un rank (A-D) ai clienti.
    |---|---|---|
    | Settore | menu a tendina (A–H) | A = 20, B = 15, C = 10, D = 8, E = 6, F = 4, G = 2, H = 1 |
    | Fatturato | fatturato annuo (€) | proporzionali, 20 punti da 10.000.000 € in su |
-   | Fatturato storico | fatturato totale degli ultimi 3 anni (€) | proporzionali, 20 punti da 30.000.000 € in su |
+   | Ordinato ultimi 3 anni | totale ordinato negli ultimi 3 anni | proporzionali, 20 punti da 50.000 in su |
    | Dipendenti | numero di dipendenti | proporzionali, 20 punti da 100 in su |
    | Potenzialità | valore da 0 a 100.000 | proporzionali, 20 punti a 100.000 |
 

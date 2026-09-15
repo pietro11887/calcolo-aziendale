@@ -67,13 +67,13 @@ CRITERI = [
     {
         "nome": "Ordinato ultimi 3 anni",
         "tipo": "numero",
-        "colonne": ["Fatturato storico (3 anni)"],
-        "tetto": 50_000,  # 3 anni x 10 milioni
+        "colonne": ["Ordinato ultimi 3 anni"],
+        "tetto": 50_000,  # 20 punti da 50.000 in su
         "minimo": 0,
         "massimo": None,
         "conta": True,
         "punti_max": 20,
-        "aiuto": "Fatturato totale degli ultimi 3 anni in euro.",
+        "aiuto": "Totale ordinato negli ultimi 3 anni.",
     },
     {
         "nome": "N° Dipendenti",
