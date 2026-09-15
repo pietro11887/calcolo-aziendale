@@ -4,7 +4,7 @@ Valutazione clienti - Streamlit.
 Funzionamento:
     1. L'utente inserisce a mano i clienti in una tabella (una riga per cliente).
     2. Ogni criterio di valutazione assegna dei punti al cliente.
-    3. I punti vengono sommati, riportati su 100 e a ogni cliente viene assegnato un rank (A-E).
+    3. I punti vengono sommati, riportati su 100 e a ogni cliente viene assegnato un rank (A-D).
     4. I clienti vengono salvati su un foglio Google (se configurato nei secrets).
 
 Organizzazione del file:
@@ -50,14 +50,13 @@ COLONNA_CLIENTE = "Cliente"
 #   - opzioni:   {opzione: punti}
 CRITERI = [
     {
-        "nome": "Categoria",  # TODO: nome e testo delle opzioni definitivi
+        "nome": "Settore",
         "tipo": "menu",
-        "colonne": ["Categoria"],
-        # TODO: punti di ciascuna opzione, da definire
-        "opzioni": {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0, "7": 0, "8": 0},
-        "conta": False,  # TODO: mettere True quando i punti delle opzioni sono definiti
+        "colonne": ["Settore"],
+        "opzioni": {"A": 20, "B": 15, "C": 10, "D": 8, "E": 6, "F": 4, "G": 2, "H": 1},
+        "conta": True,
         "punti_max": 20,
-        "aiuto": "Scegli un valore dal menu.",
+        "aiuto": "Settore del cliente (A = 20 punti … H = 1 punto).",
     },
     {
         "nome": "Fatturato",
@@ -82,7 +81,7 @@ CRITERI = [
         "aiuto": "Fatturato totale degli ultimi 3 anni in euro.",
     },
     {
-        "nome": "Dipendenti",
+        "nome": "N° Dipendenti",
         "tipo": "numero",
         "colonne": ["Dipendenti"],
         "tetto": 100,
@@ -121,8 +120,7 @@ FASCE_RANK = [
     {"lettera": "A", "minimo": 80, "testo": "#1E6B43", "sfondo": "#E3F2EA"},
     {"lettera": "B", "minimo": 60, "testo": "#3D6B1F", "sfondo": "#EDF5E1"},
     {"lettera": "C", "minimo": 40, "testo": "#7A5A00", "sfondo": "#FFF4D6"},
-    {"lettera": "D", "minimo": 20, "testo": "#8A4B12", "sfondo": "#FDE9D8"},
-    {"lettera": "E", "minimo": 0,  "testo": "#9B2C22", "sfondo": "#FBE4E1"},
+    {"lettera": "D", "minimo": 0,  "testo": "#9B2C22", "sfondo": "#FBE4E1"},
 ]
 
 DECIMALI_PUNTI = 1
@@ -141,6 +139,7 @@ SEZIONE_SECRETS = "google_sheets"
 ALIAS_COLONNE = {
     "Variabile 1": "Fatturato",
     "Variabile 2": "Dipendenti",
+    "Categoria": "Settore",
 }
 
 # Colonne che nelle versioni precedenti erano separate e ora vanno sommate in una sola

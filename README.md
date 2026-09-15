@@ -1,6 +1,6 @@
 # Valutazione Clienti
 
-Applicazione web in Streamlit per dare un punteggio e un rank (A-E) ai clienti.
+Applicazione web in Streamlit per dare un punteggio e un rank (A-D) ai clienti.
 
 ## Come funziona
 
@@ -10,23 +10,21 @@ Applicazione web in Streamlit per dare un punteggio e un rank (A-E) ai clienti.
 
    | Criterio | Cosa si inserisce | Punti |
    |---|---|---|
-   | Categoria | menu a tendina (1–8) | non conteggiato per ora: i punti delle opzioni sono da definire |
+   | Settore | menu a tendina (A–H) | A = 20, B = 15, C = 10, D = 8, E = 6, F = 4, G = 2, H = 1 |
    | Fatturato | fatturato annuo (€) | proporzionali, 20 punti da 10.000.000 € in su |
    | Fatturato storico | fatturato totale degli ultimi 3 anni (€) | proporzionali, 20 punti da 30.000.000 € in su |
    | Dipendenti | numero di dipendenti | proporzionali, 20 punti da 100 in su |
    | Potenzialità | voto da 1 a 10 | proporzionali al voto (10 = 20 punti) |
 
-3. I punti dei criteri conteggiati si sommano e vengono **riportati su 100**
-   (oggi il massimo è 80 perché la Categoria non conta: 64 punti = 80 su 100).
-   Dal punteggio su 100 dipende il **rank**:
+3. I punti dei 5 criteri si sommano (massimo 100) e dal totale dipende il **rank**.
+   Se un criterio viene escluso (`conta: False`) il totale viene riportato su 100.
 
    | Rank | Punteggio |
    |---|---|
    | A | 80 o più |
    | B | da 60 a meno di 80 |
    | C | da 40 a meno di 60 |
-   | D | da 20 a meno di 40 |
-   | E | meno di 20 |
+   | D | meno di 40 |
 
    Nella sezione **Valutazione** un riquadro per fascia mostra quanti clienti ci sono in ogni rank;
    sotto, il dettaglio per cliente è ordinato dal punteggio più alto al più basso.
@@ -40,7 +38,7 @@ Tutto è in `app.py`:
 | Cosa | Dove |
 |---|---|
 | Criteri: nomi, colonne, tetti, limiti, punti massimi | lista `CRITERI` |
-| Opzioni del menu e punti di ciascuna | `CRITERI` → criterio "Categoria" → `opzioni` (e `conta: True` per conteggiarlo) |
+| Opzioni del menu e punti di ciascuna | `CRITERI` → criterio "Settore" → `opzioni` |
 | Formula dei punti proporzionali | funzione `calcola_punti()` — cerca `# TODO` |
 | Fasce di rank (lettere, soglie e colori) | lista `FASCE_RANK` |
 | Controlli sui dati inseriti | funzione `problemi_riga()` |
@@ -81,7 +79,7 @@ Senza configurazione l'app funziona lo stesso, ma i dati si perdono ricaricando 
    Salva: l'app si riavvia e sotto la tabella compare il pulsante **Salva**.
 
 Note:
-- La prima riga del foglio contiene le intestazioni (`Cliente`, `Categoria`, `Fatturato`, …).
+- La prima riga del foglio contiene le intestazioni (`Cliente`, `Settore`, `Fatturato`, …).
   Se in `CRITERI` rinomini o aggiungi colonne, i valori delle colonne cambiate
   vanno reinseriti (o rinominati anche nel foglio).
 - Se due persone modificano i dati nello stesso momento, vale l'ultimo salvataggio.
