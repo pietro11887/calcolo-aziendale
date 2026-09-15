@@ -73,13 +73,13 @@ CRITERI = [
     {
         "nome": "Fatturato storico",
         "tipo": "numero",
-        "colonne": ["Fatturato storico 1", "Fatturato storico 2", "Fatturato storico 3"],
-        "tetto": 10_000_000,
+        "colonne": ["Fatturato storico (3 anni)"],
+        "tetto": 30_000_000,  # 3 anni x 10 milioni
         "minimo": 0,
         "massimo": None,
         "conta": True,
         "punti_max": 20,
-        "aiuto": "Fatturato di ciascuno degli ultimi 3 anni in euro: i punti si calcolano sulla media.",
+        "aiuto": "Fatturato totale degli ultimi 3 anni in euro.",
     },
     {
         "nome": "Dipendenti",
@@ -141,6 +141,11 @@ SEZIONE_SECRETS = "google_sheets"
 ALIAS_COLONNE = {
     "Variabile 1": "Fatturato",
     "Variabile 2": "Dipendenti",
+}
+
+# Colonne che nelle versioni precedenti erano separate e ora vanno sommate in una sola
+COLONNE_DA_SOMMARE = {
+    "Fatturato storico (3 anni)": ["Fatturato storico 1", "Fatturato storico 2", "Fatturato storico 3"],
 }
 
 
@@ -398,6 +403,13 @@ def leggi_clienti(foglio) -> pd.DataFrame:
 
     tabella = pd.DataFrame(dati, columns=intestazioni)
     tabella = tabella.loc[:, ~tabella.columns.duplicated()]
+
+    # Dati salvati con le versioni precedenti: somma delle colonne separate
+    for nuova, vecchie in COLONNE_DA_SOMMARE.items():
+        if nuova not in tabella.columns and all(c in tabella.columns for c in vecchie):
+            numeri = tabella[vecchie].apply(pd.to_numeric, errors="coerce")
+            tabella[nuova] = numeri.sum(axis=1, min_count=len(vecchie))  # vuoto se manca un anno
+
     return normalizza_tabella(tabella)
 
 
@@ -412,11 +424,20 @@ def scrivi_clienti(foglio, tabella: pd.DataFrame) -> None:
             "" if pd.isna(v) else (v if isinstance(v, str) else float(v)) for v in riga
         ])
 
-    # Prima si scrivono i dati nuovi, poi si svuotano le righe in eccesso:
+    # Prima si scrivono i dati nuovi, poi si svuota ciò che avanza:
     # se la scrittura non riesce, i dati salvati in precedenza restano intatti.
     foglio.update(values=valori, range_name="A1", value_input_option="RAW")
+
+    ultima_riga = max(righe_precedenti, len(valori))
+    prima_colonna_libera = gspread.utils.rowcol_to_a1(1, len(COLONNE_CLIENTI) + 1).rstrip("0123456789")
+    da_svuotare = [
+        # colonne a destra di quelle attuali (es. colonne tolte da CRITERI)
+        f"{prima_colonna_libera}1:ZZ{ultima_riga}",
+    ]
     if righe_precedenti > len(valori):
-        foglio.batch_clear([f"A{len(valori) + 1}:Z{righe_precedenti}"])
+        # righe di clienti eliminati
+        da_svuotare.append(f"A{len(valori) + 1}:ZZ{righe_precedenti}")
+    foglio.batch_clear(da_svuotare)
 
 
 # =============================================================================
