@@ -5,7 +5,8 @@ Applicazione web in Streamlit per dare un punteggio e un rank (A-D) ai clienti.
 ## Come funziona
 
 1. I clienti si inseriscono a mano nella tabella, una riga per cliente:
-   punti e rank si aggiornano subito. Quando si ha finito si preme **Salva**.
+   punti e rank si aggiornano subito. I dati non vengono salvati:
+   ricaricando o chiudendo la pagina la tabella si svuota.
 2. Ogni criterio assegna al massimo 20 punti:
 
    | Criterio | Cosa si inserisce | Punti |
@@ -42,47 +43,6 @@ Tutto è in `app.py`:
 | Formula dei punti proporzionali | funzione `calcola_punti()` — cerca `# TODO` |
 | Fasce di rank (lettere, soglie e colori) | lista `FASCE_RANK` |
 | Controlli sui dati inseriti | funzione `problemi_riga()` |
-
-## Salvataggio su Google Fogli
-
-I clienti vengono salvati in un foglio Google privato con il pulsante **Salva**
-e ricaricati automaticamente all'apertura del sito.
-Finché ci sono modifiche non salvate compare un avviso e il browser chiede conferma
-prima di chiudere o ricaricare la pagina.
-Senza configurazione l'app funziona lo stesso, ma i dati si perdono ricaricando la pagina.
-
-> ⚠️ Il file JSON delle credenziali è una chiave di accesso: non caricarlo mai su GitHub
-> e non condividerlo. Va incollato solo nei *Secrets* di Streamlit Cloud.
-
-### Configurazione (una volta sola)
-
-1. **Progetto Google Cloud** — su https://console.cloud.google.com crea un nuovo progetto
-   (es. `valutazione-clienti`).
-2. **Abilita l'API** — *API e servizi → Libreria*, cerca **Google Sheets API** e clicca *Abilita*.
-3. **Account di servizio** — *IAM e amministrazione → Account di servizio → Crea account di servizio*.
-   Basta il nome (es. `app-valutazione`), nessun ruolo necessario.
-4. **Chiave JSON** — apri l'account creato → scheda *Chiavi* → *Aggiungi chiave → Crea nuova chiave → JSON*.
-   Viene scaricato un file `.json`: conservalo in un posto sicuro.
-5. **Foglio Google** — crea un foglio vuoto (https://sheets.new), poi *Condividi* e aggiungi come
-   **Editor** l'indirizzo `client_email` scritto nel file JSON (finisce con `iam.gserviceaccount.com`).
-6. **Secrets su Streamlit** — su https://share.streamlit.io apri il menu dell'app →
-   *Settings → Secrets* e incolla, sostituendo l'URL e il contenuto del file JSON:
-
-   ```toml
-   [google_sheets]
-   url = "https://docs.google.com/spreadsheets/d/..."
-   credenziali = '''
-   { ...incolla qui tutto il contenuto del file JSON... }
-   '''
-   ```
-
-   Salva: l'app si riavvia e sotto la tabella compare il pulsante **Salva**.
-
-Note:
-- La prima riga del foglio contiene le intestazioni (`Cliente`, `Settore`, `Fatturato`, …).
-  Se in `CRITERI` rinomini o aggiungi colonne, i valori delle colonne cambiate
-  vanno reinseriti (o rinominati anche nel foglio).
-- Se due persone modificano i dati nello stesso momento, vale l'ultimo salvataggio.
 
 ## Esecuzione in locale
 

@@ -5,19 +5,14 @@ Funzionamento:
     1. L'utente inserisce a mano i clienti in una tabella (una riga per cliente).
     2. Ogni criterio di valutazione assegna dei punti al cliente.
     3. I punti vengono sommati, riportati su 100 e a ogni cliente viene assegnato un rank (A-D).
-    4. I clienti vengono salvati su un foglio Google (se configurato nei secrets).
 
 Organizzazione del file:
     1. CONFIGURAZIONE  -> criteri di valutazione, fasce di rank
     2. CALCOLO         -> `calcola_punti()`, `punti_criterio()`, `calcola_rank()`, `calcola_risultati()`
     3. VALIDAZIONE     -> `normalizza_tabella()` e `prepara_clienti()`
-    4. SALVATAGGIO     -> lettura e scrittura dei clienti su Google Fogli
-    5. INTERFACCIA     -> inserimento, salvataggio e valutazione
+    4. INTERFACCIA     -> inserimento e valutazione
 """
 
-import json
-
-import gspread
 import pandas as pd
 import streamlit as st
 
@@ -28,8 +23,7 @@ import streamlit as st
 
 TITOLO_APP = "Valutazione Clienti"
 DESCRIZIONE_APP = (
-    "Inserisci i clienti nella tabella, una riga per cliente: punti e rank si aggiornano subito. "
-    "Quando hai finito premi **Salva** per conservare i dati."
+    "Inserisci i clienti nella tabella, una riga per cliente: punti e rank si aggiornano subito."
 )
 
 COLONNA_CLIENTE = "Cliente"
@@ -38,7 +32,7 @@ COLONNA_CLIENTE = "Cliente"
 #   - nome:      nome del criterio, usato nei risultati
 #   - tipo:      "numero" -> punti proporzionali al tetto
 #                "menu"   -> punti fissi per ogni opzione del menu a tendina
-#   - colonne:   colonne da compilare nella tabella (e nel foglio Google).
+#   - colonne:   colonne da compilare nella tabella.
 #                Con più colonne si usa la media (es. fatturato degli ultimi 3 anni).
 #   - conta:     False = il criterio si compila ma non entra nel punteggio
 #   - punti_max: punti massimi del criterio
@@ -130,22 +124,6 @@ COLORE_BARRA_PUNTEGGIO = "#3B5B7A"
 
 COLONNA_PUNTEGGIO = "Punteggio"
 COLONNA_RANK = "Rank"
-
-# Sezione dei secrets di Streamlit con l'URL del foglio Google e le credenziali (vedi README)
-SEZIONE_SECRETS = "google_sheets"
-
-# Vecchi nomi delle colonne nel foglio Google, riconosciuti in lettura
-# così i dati salvati con le versioni precedenti non vanno persi.
-ALIAS_COLONNE = {
-    "Variabile 1": "Fatturato",
-    "Variabile 2": "Dipendenti",
-    "Categoria": "Settore",
-}
-
-# Colonne che nelle versioni precedenti erano separate e ora vanno sommate in una sola
-COLONNE_DA_SOMMARE = {
-    "Fatturato storico (3 anni)": ["Fatturato storico 1", "Fatturato storico 2", "Fatturato storico 3"],
-}
 
 
 def colonna_punti(criterio: dict) -> str:
@@ -242,7 +220,7 @@ def calcola_risultati(clienti: pd.DataFrame) -> pd.DataFrame:
 # =============================================================================
 
 def testo_opzione(valore):
-    """Valore di un menu come testo: 3 o 3.0 (es. letti dal foglio Google) diventano "3"."""
+    """Valore di un menu come testo senza spazi ai lati (3 o 3.0 diventano "3")."""
     if valore is None or (not isinstance(valore, str) and pd.isna(valore)):
         return pd.NA
     if isinstance(valore, float) and valore.is_integer():
@@ -327,120 +305,7 @@ def prepara_clienti(tabella: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 
 
 # =============================================================================
-# 4. SALVATAGGIO (Google Fogli)
-# =============================================================================
-
-def salvataggio_configurato() -> bool:
-    """True se nei secrets di Streamlit sono presenti i dati del foglio Google."""
-    try:
-        return SEZIONE_SECRETS in st.secrets
-    except Exception:  # nessun file di secrets, es. esecuzione in locale
-        return False
-
-
-class ErroreConfigurazione(Exception):
-    """I secrets ci sono ma sono compilati in modo errato."""
-
-
-def leggi_configurazione() -> tuple[str, dict]:
-    """
-    Legge dai secrets l'URL del foglio e le credenziali dell'account di servizio,
-    controllando che siano compilati correttamente.
-    """
-    config = st.secrets[SEZIONE_SECRETS]
-
-    url = str(config["url"]).strip() if "url" in config else ""
-    if not url.startswith("https://docs.google.com/spreadsheets/"):
-        raise ErroreConfigurazione(
-            "il valore «url» non è il link di un foglio Google "
-            "(deve iniziare con https://docs.google.com/spreadsheets/)"
-        )
-
-    testo = str(config["credenziali"]) if "credenziali" in config else ""
-    try:
-        credenziali = json.loads(testo)
-    except json.JSONDecodeError:
-        raise ErroreConfigurazione(
-            "il valore «credenziali» non contiene il testo del file JSON. "
-            "Apri il file .json con Blocco note, copia tutto il contenuto (inizia con { e finisce con }) "
-            "e incollalo tra le due righe ''' al posto del testo attuale"
-        ) from None
-    if not isinstance(credenziali, dict) or credenziali.get("type") != "service_account":
-        raise ErroreConfigurazione(
-            "il testo in «credenziali» non è la chiave JSON di un account di servizio Google"
-        )
-
-    return url, credenziali
-
-
-@st.cache_resource(show_spinner=False)
-def apri_foglio():
-    """Collegamento al primo foglio del documento Google indicato nei secrets."""
-    url, credenziali = leggi_configurazione()
-    client = gspread.service_account_from_dict(credenziali)
-    return client.open_by_url(url).sheet1
-
-
-def email_account_servizio() -> str:
-    """Indirizzo dell'account di servizio, con cui va condiviso il foglio."""
-    try:
-        return leggi_configurazione()[1]["client_email"]
-    except Exception:
-        return "l'indirizzo client_email del file delle credenziali"
-
-
-def leggi_clienti(foglio) -> pd.DataFrame:
-    """Legge i clienti salvati. La prima riga del foglio contiene le intestazioni."""
-    righe = foglio.get_all_values(value_render_option="UNFORMATTED_VALUE")
-    if not righe:
-        return tabella_vuota()
-
-    intestazioni = [str(c).strip() for c in righe[0]]
-    intestazioni = [ALIAS_COLONNE.get(c, c) for c in intestazioni]
-    n = len(intestazioni)
-    dati = [list(r[:n]) + [""] * (n - len(r)) for r in righe[1:]]
-
-    tabella = pd.DataFrame(dati, columns=intestazioni)
-    tabella = tabella.loc[:, ~tabella.columns.duplicated()]
-
-    # Dati salvati con le versioni precedenti: somma delle colonne separate
-    for nuova, vecchie in COLONNE_DA_SOMMARE.items():
-        if nuova not in tabella.columns and all(c in tabella.columns for c in vecchie):
-            numeri = tabella[vecchie].apply(pd.to_numeric, errors="coerce")
-            tabella[nuova] = numeri.sum(axis=1, min_count=len(vecchie))  # vuoto se manca un anno
-
-    return normalizza_tabella(tabella)
-
-
-def scrivi_clienti(foglio, tabella: pd.DataFrame) -> None:
-    """Sovrascrive il foglio con i clienti: intestazioni e una riga per cliente."""
-    tabella = normalizza_tabella(tabella)
-    righe_precedenti = len(foglio.get_all_values())
-
-    valori = [COLONNE_CLIENTI]
-    for riga in tabella.itertuples(index=False):
-        valori.append([
-            "" if pd.isna(v) else (v if isinstance(v, str) else float(v)) for v in riga
-        ])
-
-    # Prima si scrivono i dati nuovi, poi si svuota ciò che avanza:
-    # se la scrittura non riesce, i dati salvati in precedenza restano intatti.
-    foglio.update(values=valori, range_name="A1", value_input_option="RAW")
-
-    ultima_riga = max(righe_precedenti, len(valori))
-    prima_colonna_libera = gspread.utils.rowcol_to_a1(1, len(COLONNE_CLIENTI) + 1).rstrip("0123456789")
-    da_svuotare = [
-        # colonne a destra di quelle attuali (es. colonne tolte da CRITERI)
-        f"{prima_colonna_libera}1:ZZ{ultima_riga}",
-    ]
-    if righe_precedenti > len(valori):
-        # righe di clienti eliminati
-        da_svuotare.append(f"A{len(valori) + 1}:ZZ{righe_precedenti}")
-    foglio.batch_clear(da_svuotare)
-
-
-# =============================================================================
-# 5. INTERFACCIA
+# 4. INTERFACCIA
 # =============================================================================
 
 def formatta_numero(numero: float) -> str:
@@ -507,43 +372,8 @@ def mostra_regole() -> None:
             st.dataframe(fasce.style.map(stile_rank, subset=[COLONNA_RANK]), hide_index=True)
 
 
-def carica_dati_iniziali() -> None:
-    """All'apertura della pagina legge i clienti salvati (una volta per sessione)."""
-    if "clienti_salvati" in st.session_state:
-        return
-
-    st.session_state.clienti_salvati = tabella_vuota()
-    st.session_state.versione_tabella = 0
-    st.session_state.foglio_attivo = False
-    st.session_state.errore_foglio = None
-
-    if not salvataggio_configurato():
-        return
-
-    try:
-        with st.spinner("Caricamento dei clienti salvati..."):
-            st.session_state.clienti_salvati = leggi_clienti(apri_foglio())
-        st.session_state.foglio_attivo = True
-    except ErroreConfigurazione as errore:
-        st.session_state.errore_foglio = (
-            f"Salvataggio non configurato correttamente: {errore}. "
-            "Correggi i Secrets dell'app su Streamlit, salva e ricarica la pagina."
-        )
-    except Exception as errore:
-        # Con la lettura fallita il salvataggio resta disattivato,
-        # così non si rischia di sovrascrivere il foglio con una tabella vuota.
-        st.session_state.errore_foglio = (
-            f"Impossibile leggere i dati da Google Fogli ({errore}). "
-            f"Controlla l'URL del foglio e che sia condiviso come Editor con {email_account_servizio()}, "
-            "poi ricarica la pagina. Nel frattempo il salvataggio è disattivato."
-        )
-
-
 def mostra_inserimento() -> pd.DataFrame:
-    """
-    Tabella di inserimento dei clienti. Ogni modifica aggiorna subito la valutazione;
-    il salvataggio su Google Fogli avviene solo con il pulsante «Salva».
-    """
+    """Tabella di inserimento dei clienti. Ogni modifica aggiorna subito la valutazione."""
     config_colonne = {COLONNA_CLIENTE: st.column_config.TextColumn(COLONNA_CLIENTE)}
     for criterio in CRITERI:
         for colonna in criterio["colonne"]:
@@ -561,69 +391,12 @@ def mostra_inserimento() -> pd.DataFrame:
                 )
 
     return st.data_editor(
-        st.session_state.clienti_salvati,
+        tabella_vuota(),
         num_rows="dynamic",
         column_config=config_colonne,
         hide_index=True,
-        key=f"tabella_clienti_{st.session_state.versione_tabella}",
+        key="tabella_clienti",
     )
-
-
-def salva_tabella(tabella: pd.DataFrame) -> None:
-    """Scrive la tabella su Google Fogli."""
-    nuova = normalizza_tabella(tabella)
-    try:
-        with st.spinner("Salvataggio su Google Fogli..."):
-            scrivi_clienti(apri_foglio(), nuova)
-    except Exception as errore:
-        st.error(f"Salvataggio non riuscito ({errore}). Riprova tra qualche secondo.")
-        return
-
-    st.session_state.clienti_salvati = nuova
-    # Nuova chiave: la tabella riparte dai dati appena salvati
-    st.session_state.versione_tabella += 1
-    st.session_state.conferma_salvataggio = True
-    st.rerun()
-
-
-def avviso_uscita(attivo: bool) -> None:
-    """Se attivo, il browser chiede conferma prima di chiudere o ricaricare la pagina."""
-    if attivo:
-        script = "window.parent.onbeforeunload = function (e) { e.preventDefault(); e.returnValue = ''; };"
-    else:
-        script = "window.parent.onbeforeunload = null;"
-    # Riquadro invisibile: senza margini né barre di scorrimento
-    st.iframe(f"<style>html, body {{ margin: 0; overflow: hidden; }}</style><script>{script}</script>", height=1)
-
-
-def mostra_salvataggio(tabella: pd.DataFrame) -> None:
-    """Pulsante «Salva» e stato del salvataggio su Google Fogli."""
-    if st.session_state.errore_foglio:
-        st.error(st.session_state.errore_foglio)
-        return
-    if not st.session_state.foglio_attivo:
-        st.caption(
-            "Salvataggio non configurato: i dati restano solo in questa pagina "
-            "e si perdono ricaricandola."
-        )
-        return
-
-    if st.session_state.pop("conferma_salvataggio", False):
-        st.toast("Dati salvati su Google Fogli.")
-
-    da_salvare = not normalizza_tabella(tabella).equals(st.session_state.clienti_salvati)
-
-    colonna_pulsante, colonna_stato = st.columns([1, 5], vertical_alignment="center")
-    premuto = colonna_pulsante.button("Salva", type="primary", disabled=not da_salvare, width="stretch")
-    if da_salvare:
-        colonna_stato.warning("Modifiche non salvate: premi «Salva» prima di chiudere la pagina.")
-    else:
-        colonna_stato.caption("✓ Tutti i dati sono salvati su Google Fogli.")
-
-    avviso_uscita(da_salvare)
-
-    if premuto:
-        salva_tabella(tabella)
 
 
 def mostra_riepilogo_rank(risultati: pd.DataFrame) -> None:
@@ -702,11 +475,9 @@ def main() -> None:
     st.markdown(DESCRIZIONE_APP)
     mostra_regole()
 
-    carica_dati_iniziali()
-
     st.header("Inserimento clienti")
     tabella = mostra_inserimento()
-    mostra_salvataggio(tabella)
+    st.caption("I dati non vengono salvati: ricaricando o chiudendo la pagina la tabella si svuota.")
 
     clienti, avvisi = prepara_clienti(tabella)
     for avviso in avvisi:
