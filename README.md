@@ -6,7 +6,7 @@ Applicazione web in Streamlit per dare un punteggio e un rank (A-D) ai clienti.
 
 1. I clienti si inseriscono a mano nella tabella, una riga per cliente (senza nome:
    nei risultati e negli avvisi ogni cliente è indicato come "Riga 1", "Riga 2", …):
-   punti e rank si aggiornano subito. I dati non vengono salvati:
+   premendo **Calcola** si ottengono punti e rank. I dati non vengono salvati:
    ricaricando o chiudendo la pagina la tabella si svuota.
 2. Ogni criterio assegna al massimo 20 punti:
 

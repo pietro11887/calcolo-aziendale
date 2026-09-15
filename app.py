@@ -385,7 +385,12 @@ def mostra_regole() -> None:
 
 
 def mostra_inserimento() -> pd.DataFrame:
-    """Tabella di inserimento dei clienti. Ogni modifica aggiorna subito la valutazione."""
+    """
+    Tabella di inserimento dei clienti con il pulsante «Calcola».
+
+    La tabella è dentro un modulo: le modifiche vengono inviate, e i calcoli eseguiti,
+    solo quando si preme il pulsante. Ritorna la tabella inviata l'ultima volta.
+    """
     config_colonne = {}
     for criterio in CRITERI:
         for colonna in criterio["colonne"]:
@@ -402,13 +407,18 @@ def mostra_inserimento() -> pd.DataFrame:
                     help=criterio["aiuto"],
                 )
 
-    return st.data_editor(
-        tabella_vuota(),
-        num_rows="dynamic",
-        column_config=config_colonne,
-        hide_index=True,
-        key="tabella_clienti",
-    )
+    with st.form("form_clienti", border=False):
+        tabella = st.data_editor(
+            tabella_vuota(),
+            num_rows="dynamic",
+            column_config=config_colonne,
+            hide_index=True,
+            key="tabella_clienti",
+        )
+        if st.form_submit_button("Calcola", type="primary"):
+            st.session_state.calcolato = True
+
+    return tabella
 
 
 def mostra_riepilogo_rank(risultati: pd.DataFrame) -> None:
@@ -461,10 +471,17 @@ def mostra_tabella_risultati(risultati: pd.DataFrame) -> None:
     )
 
 
-def mostra_valutazione(clienti: pd.DataFrame) -> None:
-    """Sezione dei risultati: riepilogo per fascia e dettaglio per cliente."""
+def mostra_valutazione(clienti: pd.DataFrame | None) -> None:
+    """
+    Sezione dei risultati: riepilogo per fascia e dettaglio per cliente.
+    Con clienti=None il calcolo non è ancora stato richiesto.
+    """
     st.divider()
     st.header("Valutazione")
+
+    if clienti is None:
+        st.info("Inserisci i dati dei clienti e premi **Calcola** per vedere punteggi e rank.")
+        return
 
     if clienti.empty:
         st.info("Inserisci almeno un cliente con tutti i valori per vedere punteggi e rank.")
@@ -489,6 +506,11 @@ def main() -> None:
     st.header("Inserimento clienti")
     tabella = mostra_inserimento()
     st.caption("I dati non vengono salvati: ricaricando o chiudendo la pagina la tabella si svuota.")
+
+    # I calcoli partono solo dopo aver premuto «Calcola»
+    if not st.session_state.get("calcolato", False):
+        mostra_valutazione(None)
+        return
 
     clienti, avvisi = prepara_clienti(tabella)
     for avviso in avvisi:
