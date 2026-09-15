@@ -48,7 +48,7 @@ CRITERI = [
         "nome": "Settore",
         "tipo": "menu",
         "colonne": ["Settore"],
-        "opzioni": {"A": 20, "B": 15, "C": 10, "D": 8, "E": 6, "F": 4, "G": 2, "H": 1},
+        "opzioni": {"F£B": 20, "Farma": 15, "Packaging": 10, "Informatico": 8, "Automazione": 6, "Meccanico": 4, "Misura": 2, "Altro": 1},
         "conta": True,
         "punti_max": 20,
         "aiuto": "Settore del cliente (A = 20 punti … H = 1 punto).",
