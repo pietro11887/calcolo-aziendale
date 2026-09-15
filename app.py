@@ -21,10 +21,7 @@ import streamlit as st
 # 1. CONFIGURAZIONE
 # =============================================================================
 
-TITOLO_APP = "Valutazione Clienti"
-DESCRIZIONE_APP = (
-    "Inserisci i clienti nella tabella, una riga per cliente: punti e rank si aggiornano subito."
-)
+TITOLO_APP = "Calcolo Rank"
 
 # Nei risultati ogni cliente è indicato con il numero di riga della tabella di inserimento
 COLONNA_RIGA = "Riga"
@@ -48,7 +45,7 @@ CRITERI = [
         "nome": "Settore",
         "tipo": "menu",
         "colonne": ["Settore"],
-        "opzioni": {"F£B": 20, "Farma": 15, "Packaging": 10, "Informatico": 8, "Automazione": 6, "Meccanico": 4, "Misura": 2, "Altro": 1},
+        "opzioni": {"F&B": 20, "Farma": 15, "Packaging": 10, "Informatico": 8, "Automazione": 6, "Meccanico": 4, "Misura": 2, "Altro": 1},
         "conta": True,
         "punti_max": 20,
         "aiuto": "Settore del cliente (A = 20 punti … H = 1 punto).",
@@ -472,7 +469,6 @@ def main() -> None:
     st.set_page_config(page_title=TITOLO_APP, page_icon="📊", layout="wide")
 
     st.title(TITOLO_APP)
-    st.markdown(DESCRIZIONE_APP)
     mostra_regole()
 
     st.header("Inserimento clienti")
