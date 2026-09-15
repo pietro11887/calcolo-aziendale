@@ -25,7 +25,10 @@ TITOLO_APP = "Calcolo Rank"
 
 # Versione mostrata in fondo alla pagina (formato x.yz):
 # aumentarla di 0.01 a ogni modifica pubblicata online.
-VERSIONE = "1.00"
+VERSIONE = "1.01"
+
+# Scritta mostrata accanto alla versione, in fondo alla pagina
+FIRMA = "Powered by NOVA™ a Santoro Company"
 
 # Nei risultati ogni cliente è indicato con il numero di riga della tabella di inserimento
 COLONNA_RIGA = "Riga"
@@ -502,10 +505,10 @@ def mostra_valutazione(clienti: pd.DataFrame | None) -> None:
 
 
 def mostra_versione() -> None:
-    """Numero di versione in fondo alla pagina, allineato a destra."""
+    """Numero di versione e firma in fondo alla pagina, allineati a destra."""
     st.markdown(
         f'<div style="text-align:right; color:#888; font-size:0.8rem; margin-top:2rem;">'
-        f"Versione {VERSIONE}</div>",
+        f"Versione {VERSIONE} · {FIRMA}</div>",
         unsafe_allow_html=True,
     )
 
