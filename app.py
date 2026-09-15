@@ -65,10 +65,10 @@ CRITERI = [
         "aiuto": "Fatturato annuo in euro.",
     },
     {
-        "nome": "Fatturato storico",
+        "nome": "Ordinato ultimi 3 anni",
         "tipo": "numero",
         "colonne": ["Fatturato storico (3 anni)"],
-        "tetto": 30_000_000,  # 3 anni x 10 milioni
+        "tetto": 50_000,  # 3 anni x 10 milioni
         "minimo": 0,
         "massimo": None,
         "conta": True,
