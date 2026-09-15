@@ -49,7 +49,7 @@ CRITERI = [
                     "Meccanico": 4, "Misura": 2, "Altro": 1},
         "conta": True,
         "punti_max": 20,
-        "aiuto": "Settore del cliente (A = 20 punti … H = 1 punto).",
+        "aiuto": "Settore del cliente: i punti di ogni settore sono nelle Regole di punteggio.",
     },
     {
         "nome": "Fatturato",
@@ -307,7 +307,7 @@ def prepara_clienti(tabella: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 # =============================================================================
 
 def formatta_numero(numero: float) -> str:
-    """Numero in stile italiano, senza decimali inutili (10000000 -> "10.000.000", 79.9 -> "79,9")."""
+    """Numero in stile italiano, senza decimali inutili (10000000 -> "10.000.000", 76 -> "76")."""
     testo = f"{numero:,.{DECIMALI_PUNTI}f}"
     if "." in testo:
         testo = testo.rstrip("0").rstrip(".")
@@ -315,7 +315,7 @@ def formatta_numero(numero: float) -> str:
 
 
 def intervallo_fascia(indice: int) -> str:
-    """Intervallo di punteggio di una fascia di rank, es. "60 – 79,9"."""
+    """Intervallo di punteggio di una fascia di rank, es. "51 – 51"."""
     minimo = FASCE_RANK[indice]["minimo"]
     if indice == 0:
         massimo = SCALA_PUNTEGGIO
@@ -335,9 +335,8 @@ def descrivi_criterio(criterio: dict) -> str:
     if not criterio["conta"]:
         return "Non conteggiato per ora (punti delle opzioni da definire)"
     if criterio["tipo"] == "menu":
-        return "Punti per opzione: " + ", ".join(
-            f"{opzione} = {formatta_numero(punti)}" for opzione, punti in criterio["opzioni"].items()
-        )
+        # L'elenco delle opzioni è in una tabella a parte: in una cella non ci starebbe
+        return f"Punti fissi per opzione (vedi «Punti per {criterio['nome'].lower()}»)"
     tetto = formatta_numero(criterio["tetto"])
     if len(criterio["colonne"]) > 1:
         return f"Proporzionali alla media dei {len(criterio['colonne'])} valori, massimo a {tetto}"
@@ -356,16 +355,31 @@ def mostra_regole() -> None:
         COLONNA_PUNTEGGIO: [intervallo_fascia(i) for i in range(len(FASCE_RANK))],
     })
 
+    criteri_menu = [c for c in CRITERI if c["tipo"] == "menu"]
+
     with st.expander("Regole di punteggio"):
-        colonna_criteri, colonna_fasce = st.columns([3, 1])
-        with colonna_criteri:
-            st.markdown("**Punti per criterio**")
-            st.dataframe(regole, hide_index=True)
-            st.caption(
-                f"I punti dei criteri conteggiati (massimo {PUNTI_TOTALI_MAX}) vengono sommati "
-                f"e riportati su {SCALA_PUNTEGGIO}: da questo punteggio dipende il rank."
-            )
-        with colonna_fasce:
+        # Tabella dei criteri a tutta larghezza, così nessuna colonna viene tagliata
+        st.markdown("**Punti per criterio**")
+        st.dataframe(regole, hide_index=True)
+        st.caption(
+            f"I punti dei criteri conteggiati (massimo {PUNTI_TOTALI_MAX}) vengono sommati "
+            f"e riportati su {SCALA_PUNTEGGIO}: da questo punteggio dipende il rank."
+        )
+
+        # Sotto, affiancate: una tabella per ogni menu a tendina e le fasce di rank
+        colonne = st.columns(len(criteri_menu) + 1)
+        for colonna, criterio in zip(colonne, criteri_menu):
+            with colonna:
+                st.markdown(f"**Punti per {criterio['nome'].lower()}**")
+                st.dataframe(
+                    pd.DataFrame({
+                        criterio["nome"]: list(criterio["opzioni"]),
+                        "Punti": list(criterio["opzioni"].values()),
+                    }),
+                    hide_index=True,
+                )
+
+        with colonne[-1]:
             st.markdown("**Fasce di rank**")
             st.dataframe(fasce.style.map(stile_rank, subset=[COLONNA_RANK]), hide_index=True)
 
