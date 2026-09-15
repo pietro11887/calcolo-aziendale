@@ -4,8 +4,8 @@ Applicazione web in Streamlit per dare un punteggio e un rank (A-E) ai clienti.
 
 ## Come funziona
 
-1. I clienti si inseriscono a mano nella tabella, una riga per cliente,
-   poi si preme **Salva e aggiorna valutazione**.
+1. I clienti si inseriscono a mano nella tabella, una riga per cliente:
+   punti e rank si aggiornano subito. Quando si ha finito si preme **Salva**.
 2. Ogni criterio assegna al massimo 20 punti:
 
    | Criterio | Cosa si inserisce | Punti |
@@ -47,9 +47,10 @@ Tutto è in `app.py`:
 
 ## Salvataggio su Google Fogli
 
-I clienti vengono salvati in un foglio Google privato con il pulsante
-**Salva e aggiorna valutazione** e ricaricati automaticamente all'apertura del sito.
-Le modifiche non ancora inviate con il pulsante si perdono chiudendo o ricaricando la pagina.
+I clienti vengono salvati in un foglio Google privato con il pulsante **Salva**
+e ricaricati automaticamente all'apertura del sito.
+Finché ci sono modifiche non salvate compare un avviso e il browser chiede conferma
+prima di chiudere o ricaricare la pagina.
 Senza configurazione l'app funziona lo stesso, ma i dati si perdono ricaricando la pagina.
 
 > ⚠️ Il file JSON delle credenziali è una chiave di accesso: non caricarlo mai su GitHub
@@ -77,7 +78,7 @@ Senza configurazione l'app funziona lo stesso, ma i dati si perdono ricaricando 
    '''
    ```
 
-   Salva: l'app si riavvia e sotto la tabella compare il pulsante **Salva e aggiorna valutazione**.
+   Salva: l'app si riavvia e sotto la tabella compare il pulsante **Salva**.
 
 Note:
 - La prima riga del foglio contiene le intestazioni (`Cliente`, `Categoria`, `Fatturato`, …).

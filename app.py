@@ -28,8 +28,8 @@ import streamlit as st
 
 TITOLO_APP = "Valutazione Clienti"
 DESCRIZIONE_APP = (
-    "Inserisci i clienti nella tabella, una riga per cliente, "
-    "poi premi il pulsante sotto la tabella per aggiornare punti e rank."
+    "Inserisci i clienti nella tabella, una riga per cliente: punti e rank si aggiornano subito. "
+    "Quando hai finito premi **Salva** per conservare i dati."
 )
 
 COLONNA_CLIENTE = "Cliente"
@@ -542,11 +542,8 @@ def carica_dati_iniziali() -> None:
 
 def mostra_inserimento() -> pd.DataFrame:
     """
-    Tabella di inserimento dei clienti dentro un modulo.
-
-    Il modulo invia le modifiche solo alla pressione del pulsante: mentre l'utente
-    compila le celle la pagina non si ricarica, così nessun valore va perso.
-    Ritorna la tabella così come è stata inviata l'ultima volta.
+    Tabella di inserimento dei clienti. Ogni modifica aggiorna subito la valutazione;
+    il salvataggio su Google Fogli avviene solo con il pulsante «Salva».
     """
     config_colonne = {COLONNA_CLIENTE: st.column_config.TextColumn(COLONNA_CLIENTE)}
     for criterio in CRITERI:
@@ -564,35 +561,21 @@ def mostra_inserimento() -> pd.DataFrame:
                     help=criterio["aiuto"],
                 )
 
-    if st.session_state.foglio_attivo:
-        testo_pulsante = "Salva e aggiorna valutazione"
-    else:
-        testo_pulsante = "Aggiorna valutazione"
-
-    with st.form("form_clienti", border=False):
-        tabella = st.data_editor(
-            st.session_state.clienti_salvati,
-            num_rows="dynamic",
-            column_config=config_colonne,
-            hide_index=True,
-            key=f"tabella_clienti_{st.session_state.versione_tabella}",
-        )
-        inviato = st.form_submit_button(testo_pulsante, type="primary")
-
-    if inviato and st.session_state.foglio_attivo:
-        salva_tabella(tabella)
-
-    return tabella
+    return st.data_editor(
+        st.session_state.clienti_salvati,
+        num_rows="dynamic",
+        column_config=config_colonne,
+        hide_index=True,
+        key=f"tabella_clienti_{st.session_state.versione_tabella}",
+    )
 
 
 def salva_tabella(tabella: pd.DataFrame) -> None:
-    """Scrive la tabella su Google Fogli, se è cambiata rispetto all'ultimo salvataggio."""
+    """Scrive la tabella su Google Fogli."""
     nuova = normalizza_tabella(tabella)
-    if nuova.equals(st.session_state.clienti_salvati):
-        return
-
     try:
-        scrivi_clienti(apri_foglio(), nuova)
+        with st.spinner("Salvataggio su Google Fogli..."):
+            scrivi_clienti(apri_foglio(), nuova)
     except Exception as errore:
         st.error(f"Salvataggio non riuscito ({errore}). Riprova tra qualche secondo.")
         return
@@ -604,8 +587,18 @@ def salva_tabella(tabella: pd.DataFrame) -> None:
     st.rerun()
 
 
-def mostra_stato_salvataggio(tabella: pd.DataFrame) -> None:
-    """Indica se i dati mostrati sono salvati su Google Fogli."""
+def avviso_uscita(attivo: bool) -> None:
+    """Se attivo, il browser chiede conferma prima di chiudere o ricaricare la pagina."""
+    if attivo:
+        script = "window.parent.onbeforeunload = function (e) { e.preventDefault(); e.returnValue = ''; };"
+    else:
+        script = "window.parent.onbeforeunload = null;"
+    # Riquadro invisibile: senza margini né barre di scorrimento
+    st.iframe(f"<style>html, body {{ margin: 0; overflow: hidden; }}</style><script>{script}</script>", height=1)
+
+
+def mostra_salvataggio(tabella: pd.DataFrame) -> None:
+    """Pulsante «Salva» e stato del salvataggio su Google Fogli."""
     if st.session_state.errore_foglio:
         st.error(st.session_state.errore_foglio)
         return
@@ -619,10 +612,19 @@ def mostra_stato_salvataggio(tabella: pd.DataFrame) -> None:
     if st.session_state.pop("conferma_salvataggio", False):
         st.toast("Dati salvati su Google Fogli.")
 
-    if normalizza_tabella(tabella).equals(st.session_state.clienti_salvati):
-        st.caption("✓ Dati salvati su Google Fogli.")
+    da_salvare = not normalizza_tabella(tabella).equals(st.session_state.clienti_salvati)
+
+    colonna_pulsante, colonna_stato = st.columns([1, 5], vertical_alignment="center")
+    premuto = colonna_pulsante.button("Salva", type="primary", disabled=not da_salvare, width="stretch")
+    if da_salvare:
+        colonna_stato.warning("Modifiche non salvate: premi «Salva» prima di chiudere la pagina.")
     else:
-        st.warning("Le ultime modifiche non sono salvate: premi di nuovo il pulsante per riprovare.")
+        colonna_stato.caption("✓ Tutti i dati sono salvati su Google Fogli.")
+
+    avviso_uscita(da_salvare)
+
+    if premuto:
+        salva_tabella(tabella)
 
 
 def mostra_riepilogo_rank(risultati: pd.DataFrame) -> None:
@@ -705,7 +707,7 @@ def main() -> None:
 
     st.header("Inserimento clienti")
     tabella = mostra_inserimento()
-    mostra_stato_salvataggio(tabella)
+    mostra_salvataggio(tabella)
 
     clienti, avvisi = prepara_clienti(tabella)
     for avviso in avvisi:
